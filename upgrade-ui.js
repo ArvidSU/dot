@@ -1,7 +1,661 @@
 // ============================================
-// UPGRADE UI - Tree Visualization & Modal
+// UPGRADE UI - Redesigned Tree Visualization
 // ============================================
 
+// ============================================
+// ANIMATION ENGINE
+// ============================================
+class AnimationEngine {
+    constructor() {
+        this.animations = [];
+    }
+    
+    add(animation) {
+        this.animations.push(animation);
+    }
+    
+    update(deltaTime) {
+        this.animations = this.animations.filter(a => {
+            a.update(deltaTime);
+            return !a.isComplete;
+        });
+    }
+    
+    render(ctx) {
+        this.animations.forEach(a => a.render(ctx));
+    }
+}
+
+// ============================================
+// PARTICLE SYSTEM
+// ============================================
+class Particle {
+    constructor(x, y, color, velocity, life) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.velocity = velocity;
+        this.life = life;
+        this.maxLife = life;
+        this.size = Math.random() * 3 + 1;
+    }
+    
+    update(deltaTime) {
+        this.x += this.velocity.x * deltaTime;
+        this.y += this.velocity.y * deltaTime;
+        this.life -= deltaTime;
+        this.velocity.y += 0.1 * deltaTime; // Gravity
+    }
+    
+    render(ctx) {
+        const alpha = this.life / this.maxLife;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+        ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+        ctx.fill();
+    }
+    
+    get isComplete() {
+        return this.life <= 0;
+    }
+}
+
+class ParticleSystem {
+    constructor() {
+        this.particles = [];
+    }
+    
+    emit(x, y, color, count = 10) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 100 + 50;
+            const velocity = {
+                x: Math.cos(angle) * speed,
+                y: Math.sin(angle) * speed
+            };
+            this.particles.push(new Particle(x, y, color, velocity, 1 + Math.random()));
+        }
+    }
+    
+    update(deltaTime) {
+        this.particles = this.particles.filter(p => {
+            p.update(deltaTime);
+            return !p.isComplete;
+        });
+    }
+    
+    render(ctx) {
+        this.particles.forEach(p => p.render(ctx));
+    }
+}
+
+// ============================================
+// CANVAS VIEW CONTROLLER
+// ============================================
+class CanvasViewController {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        
+        // Viewport state
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.zoom = 1;
+        this.targetZoom = 1;
+        this.minZoom = 0.5;
+        this.maxZoom = 3;
+        
+        // Pan state
+        this.isDragging = false;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        this.dragVelocity = { x: 0, y: 0 };
+        
+        // Animation
+        this.zoomTransitionSpeed = 5;
+    }
+    
+    // Coordinate conversion
+    worldToScreen(x, y) {
+        return {
+            x: (x * this.zoom) + this.offsetX + this.canvas.width / 2,
+            y: (y * this.zoom) + this.offsetY + this.canvas.height / 2
+        };
+    }
+    
+    screenToWorld(x, y) {
+        return {
+            x: (x - this.offsetX - this.canvas.width / 2) / this.zoom,
+            y: (y - this.offsetY - this.canvas.height / 2) / this.zoom
+        };
+    }
+    
+    // Pan controls
+    startPan(x, y) {
+        this.isDragging = true;
+        this.lastMouseX = x;
+        this.lastMouseY = y;
+        this.dragVelocity = { x: 0, y: 0 };
+    }
+    
+    pan(x, y) {
+        if (!this.isDragging) return;
+        
+        const dx = x - this.lastMouseX;
+        const dy = y - this.lastMouseY;
+        
+        this.offsetX += dx;
+        this.offsetY += dy;
+        
+        this.dragVelocity = { x: dx, y: dy };
+        this.lastMouseX = x;
+        this.lastMouseY = y;
+    }
+    
+    endPan() {
+        this.isDragging = false;
+    }
+    
+    // Zoom controls
+    zoomAt(x, y, delta) {
+        const worldPos = this.screenToWorld(x, y);
+        
+        const zoomFactor = delta > 0 ? 0.9 : 1.1;
+        this.targetZoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.targetZoom * zoomFactor));
+        
+        // Adjust offset to zoom toward mouse position
+        const newScreenPos = this.worldToScreen(worldPos.x, worldPos.y);
+        this.offsetX += x - newScreenPos.x;
+        this.offsetY += y - newScreenPos.y;
+    }
+    
+    setZoom(zoom) {
+        this.targetZoom = Math.max(this.minZoom, Math.min(this.maxZoom, zoom));
+    }
+    
+    resetView() {
+        this.targetZoom = 1;
+        this.offsetX = 0;
+        this.offsetY = 0;
+    }
+    
+    focusOn(x, y) {
+        this.offsetX = -x * this.zoom;
+        this.offsetY = -y * this.zoom;
+    }
+    
+    // Update smooth zoom transition
+    update(deltaTime) {
+        // Smooth zoom interpolation
+        if (Math.abs(this.zoom - this.targetZoom) > 0.001) {
+            this.zoom += (this.targetZoom - this.zoom) * this.zoomTransitionSpeed * deltaTime;
+        }
+        
+        // Momentum for pan
+        if (!this.isDragging) {
+            this.offsetX += this.dragVelocity.x * 0.9;
+            this.offsetY += this.dragVelocity.y * 0.9;
+            this.dragVelocity.x *= 0.9;
+            this.dragVelocity.y *= 0.9;
+        }
+    }
+    
+    // Clear canvas
+    clear() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+}
+
+// ============================================
+// NODE RENDERER
+// ============================================
+class NodeRenderer {
+    constructor(canvasController) {
+        this.canvasController = canvasController;
+        this.nodeSize = 50;
+        this.nodeSpacing = 120;
+    }
+    
+    getNodeScreenPosition(node) {
+        return this.canvasController.worldToScreen(
+            node.x * this.nodeSpacing,
+            node.y * this.nodeSpacing
+        );
+    }
+    
+    renderNode(node, tree, hoverNode, glowPhase) {
+        const ctx = this.canvasController.ctx;
+        const pos = this.getNodeScreenPosition(node);
+        const size = this.nodeSize * this.canvasController.zoom;
+        const halfSize = size / 2;
+        
+        const isUnlocked = node.isUnlocked(tree);
+        const hasInvestment = node.hasInvestment();
+        const level = node.getLevel();
+        const isHovered = hoverNode === node;
+        
+        // Determine visual state
+        let bgAlpha = 0.1;
+        let borderAlpha = 0.2;
+        let iconAlpha = 0.4;
+        let glowIntensity = 0;
+        let scale = 1;
+        
+        if (hasInvestment) {
+            bgAlpha = 0.2;
+            borderAlpha = 0.6;
+            iconAlpha = 1;
+            glowIntensity = 0.4 + Math.sin(glowPhase * 1.5) * 0.1;
+        } else if (isUnlocked) {
+            const parent = tree.getNode(node.parentId);
+            if (!parent || parent.hasInvestment()) {
+                bgAlpha = 0.1;
+                borderAlpha = 0.3 + Math.sin(glowPhase) * 0.1;
+                iconAlpha = 0.6;
+                glowIntensity = 0.15 + Math.sin(glowPhase) * 0.1;
+            }
+        }
+        
+        if (isHovered) {
+            bgAlpha += 0.1;
+            borderAlpha += 0.2;
+            glowIntensity += 0.1;
+            scale = 1.15;
+        }
+        
+        const scaledSize = size * scale;
+        const scaledHalfSize = scaledSize / 2;
+        
+        // Draw outer glow
+        if (glowIntensity > 0) {
+            const gradient = ctx.createRadialGradient(
+                pos.x, pos.y, scaledHalfSize * 0.5,
+                pos.x, pos.y, scaledHalfSize * 2.5
+            );
+            gradient.addColorStop(0, `${node.color}${Math.floor(glowIntensity * 80).toString(16).padStart(2, '0')}`);
+            gradient.addColorStop(1, 'transparent');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(pos.x - scaledHalfSize * 2.5, pos.y - scaledHalfSize * 2.5, scaledSize * 5, scaledSize * 5);
+        }
+        
+        // Draw hexagonal background
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+        ctx.scale(scale, scale);
+        
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI / 3) * i - Math.PI / 2;
+            const x = Math.cos(angle) * halfSize;
+            const y = Math.sin(angle) * halfSize;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        
+        ctx.fillStyle = `rgba(30, 30, 40, ${bgAlpha + 0.8})`;
+        ctx.fill();
+        
+        // Draw border
+        ctx.strokeStyle = hasInvestment ? node.color : `rgba(255, 255, 255, ${borderAlpha})`;
+        ctx.lineWidth = hasInvestment ? 2 : 1;
+        ctx.stroke();
+        
+        // Draw icon
+        ctx.font = `${size * 0.4}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = hasInvestment ? node.color : `rgba(255, 255, 255, ${iconAlpha})`;
+        ctx.fillText(node.icon, 0, -size * 0.05);
+        
+        ctx.restore();
+        
+        // Draw level indicator
+        if (hasInvestment || isHovered) {
+            const maxLevel = node.properties.reduce((sum, prop) => sum + prop.maxLevel, 0);
+            ctx.font = `600 ${size * 0.25}px Outfit, sans-serif`;
+            ctx.fillStyle = hasInvestment ? '#ffd700' : `rgba(255, 255, 255, ${iconAlpha * 0.6})`;
+            ctx.textAlign = 'center';
+            ctx.fillText(`${level}/${maxLevel}`, pos.x, pos.y + scaledHalfSize + size * 0.3);
+        }
+        
+        // Draw progress ring for unlockable nodes
+        if (!isUnlocked && node.parentId) {
+            const parent = tree.getNode(node.parentId);
+            if (parent) {
+                const progress = Math.min(1, parent.getLevel() / node.requiredParentLevel);
+                if (progress > 0) {
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, scaledHalfSize + 4, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * progress));
+                    ctx.strokeStyle = `rgba(255, 255, 255, ${progress * 0.5})`;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+        }
+        
+        // Draw name below node (only if invested or hovered)
+        if (hasInvestment || isHovered) {
+            ctx.font = `${size * 0.2}px Outfit, sans-serif`;
+            ctx.fillStyle = `rgba(255, 255, 255, 0.5)`;
+            ctx.textAlign = 'center';
+            ctx.fillText(node.name, pos.x, pos.y + scaledHalfSize + size * 0.55);
+        }
+    }
+    
+    getNodeAtPosition(mouseX, mouseY, tree) {
+        const worldPos = this.canvasController.screenToWorld(mouseX, mouseY);
+        
+        for (const node of tree.getAllNodes()) {
+            const dx = worldPos.x - node.x * this.nodeSpacing;
+            const dy = worldPos.y - node.y * this.nodeSpacing;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < this.nodeSize / 2) {
+                return node;
+            }
+        }
+        return null;
+    }
+}
+
+// ============================================
+// CONNECTION RENDERER
+// ============================================
+class ConnectionRenderer {
+    constructor(canvasController, nodeRenderer) {
+        this.canvasController = canvasController;
+        this.nodeRenderer = nodeRenderer;
+        this.energyParticles = [];
+    }
+    
+    renderConnection(node, tree, glowPhase) {
+        const ctx = this.canvasController.ctx;
+        const parent = tree.getNode(node.parentId);
+        if (!parent) return;
+        
+        const startPos = this.nodeRenderer.getNodeScreenPosition(parent);
+        const endPos = this.nodeRenderer.getNodeScreenPosition(node);
+        
+        const isUnlocked = node.isUnlocked(tree);
+        const hasInvestment = node.hasInvestment();
+        const parentHasInvestment = parent.hasInvestment();
+        
+        // Determine line style
+        let alpha = 0.15;
+        let lineWidth = 2;
+        let glowColor = null;
+        
+        if (hasInvestment) {
+            alpha = 0.6;
+            lineWidth = 3;
+            glowColor = node.color;
+        } else if (isUnlocked && parentHasInvestment) {
+            alpha = 0.3 + Math.sin(glowPhase) * 0.15;
+            lineWidth = 2;
+            glowColor = node.color;
+        }
+        
+        // Calculate bezier control points
+        const midY = (startPos.y + endPos.y) / 2;
+        const cp1 = { x: startPos.x, y: midY };
+        const cp2 = { x: endPos.x, y: midY };
+        
+        // Draw glow
+        if (glowColor) {
+            ctx.beginPath();
+            ctx.moveTo(startPos.x, startPos.y);
+            ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, endPos.x, endPos.y);
+            ctx.strokeStyle = glowColor;
+            ctx.lineWidth = lineWidth + 6;
+            ctx.globalAlpha = alpha * 0.3;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+        
+        // Draw main line
+        ctx.beginPath();
+        ctx.moveTo(startPos.x, startPos.y);
+        ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, endPos.x, endPos.y);
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+        
+        // Draw energy flow particles
+        if (hasInvestment || (isUnlocked && parentHasInvestment)) {
+            this.updateEnergyParticles(node, startPos, endPos, cp1, cp2, glowColor || '#ffffff');
+        }
+    }
+    
+    updateEnergyParticles(node, startPos, endPos, cp1, cp2, color) {
+        // Spawn new particles
+        if (Math.random() < 0.02) {
+            this.energyParticles.push({
+                node: node,
+                t: 0,
+                speed: 0.01 + Math.random() * 0.01,
+                color: color
+            });
+        }
+        
+        // Update and render particles
+        this.energyParticles = this.energyParticles.filter(p => {
+            p.t += p.speed;
+            
+            if (p.t >= 1) return false;
+            
+            // Calculate position on bezier curve
+            const t = p.t;
+            const mt = 1 - t;
+            const x = mt * mt * mt * startPos.x + 
+                      3 * mt * mt * t * cp1.x + 
+                      3 * mt * t * t * cp2.x + 
+                      t * t * t * endPos.x;
+            const y = mt * mt * mt * startPos.y + 
+                      3 * mt * mt * t * cp1.y + 
+                      3 * mt * t * t * cp2.y + 
+                      t * t * t * endPos.y;
+            
+            // Draw particle
+            const ctx = this.canvasController.ctx;
+            const size = 3 * this.canvasController.zoom;
+            
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+            
+            // Draw trail
+            ctx.beginPath();
+            ctx.arc(x, y, size * 2, 0, Math.PI * 2);
+            ctx.fillStyle = p.color + '40';
+            ctx.fill();
+            
+            return true;
+        });
+    }
+    
+    clearEnergyParticles() {
+        this.energyParticles = [];
+    }
+}
+
+// ============================================
+// MINI-MAP CONTROLLER
+// ============================================
+class MiniMapController {
+    constructor(canvasController, nodeRenderer) {
+        this.canvasController = canvasController;
+        this.nodeRenderer = nodeRenderer;
+        this.size = 150;
+        this.canvas = null;
+        this.ctx = null;
+        this.visible = true;
+    }
+    
+    createElements() {
+        this.canvas = document.createElement('canvas');
+        this.canvas.id = 'minimap';
+        this.canvas.width = this.size;
+        this.canvas.height = this.size;
+        this.canvas.style.cssText = `
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(10, 10, 15, 0.8);
+            cursor: pointer;
+            z-index: 10;
+        `;
+        
+        this.ctx = this.canvas.getContext('2d');
+        
+        this.canvas.addEventListener('click', (e) => this.handleClick(e));
+    }
+    
+    handleClick(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Convert minimap coordinates to world coordinates
+        const worldX = (x - this.size / 2) * 4;
+        const worldY = (y - this.size / 2) * 4;
+        
+        this.canvasController.focusOn(worldX, worldY);
+    }
+    
+    render(tree) {
+        if (!this.visible || !this.ctx) return;
+        
+        const ctx = this.ctx;
+        ctx.clearRect(0, 0, this.size, this.size);
+        
+        // Calculate bounds
+        const nodes = tree.getAllNodes();
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+        
+        for (const node of nodes) {
+            minX = Math.min(minX, node.x);
+            maxX = Math.max(maxX, node.x);
+            minY = Math.min(minY, node.y);
+            maxY = Math.max(maxY, node.y);
+        }
+        
+        const padding = 1;
+        const rangeX = maxX - minX + padding * 2;
+        const rangeY = maxY - minY + padding * 2;
+        const scale = Math.min(this.size / rangeX, this.size / rangeY) * 0.8;
+        
+        const offsetX = this.size / 2 - (minX + maxX) / 2 * scale;
+        const offsetY = this.size / 2 - (minY + maxY) / 2 * scale;
+        
+        // Draw connections
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 1;
+        for (const node of nodes) {
+            if (node.parentId) {
+                const parent = tree.getNode(node.parentId);
+                if (parent) {
+                    ctx.beginPath();
+                    ctx.moveTo(parent.x * scale + offsetX, parent.y * scale + offsetY);
+                    ctx.lineTo(node.x * scale + offsetX, node.y * scale + offsetY);
+                    ctx.stroke();
+                }
+            }
+        }
+        
+        // Draw nodes
+        for (const node of nodes) {
+            const x = node.x * scale + offsetX;
+            const y = node.y * scale + offsetY;
+            const isUnlocked = node.isUnlocked(tree);
+            const hasInvestment = node.hasInvestment();
+            
+            ctx.beginPath();
+            ctx.arc(x, y, hasInvestment ? 4 : 3, 0, Math.PI * 2);
+            
+            if (hasInvestment) {
+                ctx.fillStyle = node.color;
+            } else if (isUnlocked) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            } else {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            }
+            ctx.fill();
+        }
+        
+        // Draw viewport rectangle
+        const viewportWidth = this.canvasController.canvas.width / this.canvasController.zoom / scale;
+        const viewportHeight = this.canvasController.canvas.height / this.canvasController.zoom / scale;
+        const viewportX = -this.canvasController.offsetX / this.canvasController.zoom / scale + this.size / 2;
+        const viewportY = -this.canvasController.offsetY / this.canvasController.zoom / scale + this.size / 2;
+        
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(viewportX, viewportY, viewportWidth, viewportHeight);
+    }
+}
+
+// ============================================
+// CONTROLS CONTROLLER
+// ============================================
+class ControlsController {
+    constructor(canvasController) {
+        this.canvasController = canvasController;
+        this.container = null;
+    }
+    
+    createElements() {
+        this.container = document.createElement('div');
+        this.container.id = 'zoom-controls';
+        this.container.innerHTML = `
+            <button class="zoom-btn" id="zoom-out" title="Zoom Out">−</button>
+            <span class="zoom-level" id="zoom-level">100%</span>
+            <button class="zoom-btn" id="zoom-in" title="Zoom In">+</button>
+            <button class="zoom-btn" id="zoom-reset" title="Reset View">⟲</button>
+        `;
+        
+        this.container.style.cssText = `
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(10, 10, 15, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            z-index: 10;
+        `;
+        
+        // Add event listeners
+        this.container.querySelector('#zoom-in').addEventListener('click', () => {
+            this.canvasController.setZoom(this.canvasController.targetZoom * 1.2);
+        });
+        
+        this.container.querySelector('#zoom-out').addEventListener('click', () => {
+            this.canvasController.setZoom(this.canvasController.targetZoom / 1.2);
+        });
+        
+        this.container.querySelector('#zoom-reset').addEventListener('click', () => {
+            this.canvasController.resetView();
+        });
+    }
+    
+    update() {
+        const zoomLevel = Math.round(this.canvasController.zoom * 100);
+        this.container.querySelector('#zoom-level').textContent = `${zoomLevel}%`;
+    }
+}
+
+// ============================================
+// MAIN UPGRADE UI CLASS
+// ============================================
 class UpgradeUI {
     constructor(tree, onClose) {
         this.tree = tree;
@@ -10,18 +664,15 @@ class UpgradeUI {
         this.selectedNode = null;
         this.modalVisible = false;
         
-        // Layout settings
-        this.nodeSize = 60;
-        this.nodeSpacing = 140;
-        this.centerX = 0;
-        this.centerY = 0;
-        
         // Animation
         this.glowPhase = 0;
         this.hoverNode = null;
         
-        // Create DOM elements
+        // Create components
         this.createElements();
+        this.initComponents();
+        this.setupEvents();
+        this.addStyles();
     }
     
     createElements() {
@@ -42,10 +693,9 @@ class UpgradeUI {
             </div>
             <div class="tree-canvas-container">
                 <canvas id="tree-canvas"></canvas>
-                <div id="node-buttons-container"></div>
             </div>
             <div class="upgrade-footer">
-                <p>Click a node to view and upgrade its properties</p>
+                <p>Drag to pan • Scroll to zoom • Click nodes to upgrade</p>
             </div>
         `;
         document.body.appendChild(this.overlay);
@@ -71,17 +721,316 @@ class UpgradeUI {
             </div>
         `;
         document.body.appendChild(this.modal);
-        
-        // Get references
+    }
+    
+    initComponents() {
+        // Get canvas reference
         this.canvas = document.getElementById('tree-canvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.nodeButtonsContainer = document.getElementById('node-buttons-container');
         
-        // Setup event listeners
-        this.setupEvents();
+        // Initialize controllers
+        this.canvasController = new CanvasViewController(this.canvas);
+        this.nodeRenderer = new NodeRenderer(this.canvasController);
+        this.connectionRenderer = new ConnectionRenderer(this.canvasController, this.nodeRenderer);
+        this.miniMapController = new MiniMapController(this.canvasController, this.nodeRenderer);
+        this.controlsController = new ControlsController(this.canvasController);
         
-        // Add styles
-        this.addStyles();
+        // Initialize animation systems
+        this.animationEngine = new AnimationEngine();
+        this.particleSystem = new ParticleSystem();
+        
+        // Create UI elements
+        this.miniMapController.createElements();
+        this.controlsController.createElements();
+        
+        // Add to DOM
+        this.overlay.querySelector('.tree-canvas-container').appendChild(this.miniMapController.canvas);
+        this.overlay.querySelector('.tree-canvas-container').appendChild(this.controlsController.container);
+    }
+    
+    setupEvents() {
+        // Close button
+        document.getElementById('close-tree').addEventListener('click', () => this.hide());
+        document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
+        
+        // Debug buttons for testing
+        document.getElementById('debug-plus').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.tree.addCurrency(10);
+            this.tree.save();
+            this.updateCurrencyDisplay();
+        });
+        
+        document.getElementById('debug-minus').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.tree.currency = Math.max(0, this.tree.currency - 10);
+            this.tree.save();
+            this.updateCurrencyDisplay();
+        });
+        
+        // Canvas events
+        this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+        this.canvas.addEventListener('mouseleave', (e) => this.handleMouseUp(e));
+        this.canvas.addEventListener('wheel', (e) => this.handleWheel(e));
+        this.canvas.addEventListener('dblclick', (e) => this.handleDoubleClick(e));
+        
+        // Escape to close
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Escape') {
+                if (this.modalVisible) {
+                    this.closeModal();
+                } else if (this.visible) {
+                    this.hide();
+                }
+            }
+        });
+    }
+    
+    handleMouseDown(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Check if clicking on a node
+        const node = this.nodeRenderer.getNodeAtPosition(x, y, this.tree);
+        if (node && node.isUnlocked(this.tree)) {
+            this.openModal(node);
+            return;
+        }
+        
+        // Start panning
+        this.canvasController.startPan(x, y);
+    }
+    
+    handleMouseMove(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Update hover state
+        this.hoverNode = this.nodeRenderer.getNodeAtPosition(x, y, this.tree);
+        this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'grab';
+        
+        // Pan
+        this.canvasController.pan(x, y);
+    }
+    
+    handleMouseUp(e) {
+        this.canvasController.endPan();
+        this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'grab';
+    }
+    
+    handleWheel(e) {
+        e.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        this.canvasController.zoomAt(x, y, e.deltaY);
+    }
+    
+    handleDoubleClick(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const node = this.nodeRenderer.getNodeAtPosition(x, y, this.tree);
+        if (node) {
+            this.canvasController.focusOn(node.x * this.nodeRenderer.nodeSpacing, node.y * this.nodeRenderer.nodeSpacing);
+        } else {
+            this.canvasController.resetView();
+        }
+    }
+    
+    openModal(node) {
+        if (!node.isUnlocked(this.tree)) return;
+        this.selectedNode = node;
+        this.modalVisible = true;
+        this.modal.classList.add('visible');
+        this.updateModal();
+        
+        // Emit particles
+        const pos = this.nodeRenderer.getNodeScreenPosition(node);
+        this.particleSystem.emit(pos.x, pos.y, node.color, 20);
+    }
+    
+    closeModal() {
+        this.modalVisible = false;
+        this.modal.classList.remove('visible');
+        this.selectedNode = null;
+    }
+    
+    updateModal() {
+        if (!this.selectedNode) return;
+        
+        const node = this.selectedNode;
+        const isUnlocked = node.isUnlocked(this.tree);
+        
+        document.getElementById('modal-icon').textContent = node.icon;
+        document.getElementById('modal-icon').style.color = node.color;
+        document.getElementById('modal-title').textContent = node.name;
+        document.getElementById('modal-description').textContent = node.description;
+        const maxLevel = node.properties.reduce((sum, prop) => sum + prop.maxLevel, 0);
+        document.getElementById('modal-level').textContent = `${node.getLevel()}/${maxLevel}`;
+        
+        const propsContainer = document.getElementById('modal-properties');
+        propsContainer.innerHTML = '';
+        
+        for (const prop of node.properties) {
+            const row = document.createElement('div');
+            row.className = 'property-row';
+            
+            const upgradeCost = prop.getUpgradeCost();
+            const canUpgrade = isUnlocked && prop.level < prop.maxLevel && this.tree.currency >= upgradeCost;
+            const canRefund = prop.level > 0 && this.canRefundProperty(node, prop);
+            
+            const effectiveValue = prop.getValue();
+            const formattedValue = prop.effectType === 'multiply' 
+                ? `×${effectiveValue.toFixed(2)}` 
+                : effectiveValue.toFixed(1);
+            
+            row.innerHTML = `
+                <div class="property-icon" style="color: ${node.color}">${prop.icon}</div>
+                <div class="property-info">
+                    <div class="property-name">${prop.name}</div>
+                    <div class="property-desc">${prop.description}</div>
+                    <div class="property-value">Current: ${formattedValue}</div>
+                </div>
+                <div class="property-controls">
+                    <button class="property-btn minus" data-prop="${prop.id}" ${!canRefund ? 'disabled' : ''}>−</button>
+                    <span class="property-cost">${upgradeCost === Infinity ? 'MAX' : upgradeCost + '◆'}</span>
+                    <button class="property-btn plus" data-prop="${prop.id}" ${!canUpgrade ? 'disabled' : ''}>+</button>
+                    <span class="property-cost">${prop.level}/${prop.maxLevel}</span>
+                </div>
+            `;
+            
+            propsContainer.appendChild(row);
+        }
+        
+        // Add button listeners
+        propsContainer.querySelectorAll('.property-btn.plus').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const propId = btn.dataset.prop;
+                if (this.tree.upgradeProperty(node.id, propId)) {
+                    this.updateModal();
+                    this.updateCurrencyDisplay();
+                    this.tree.save();
+                    
+                    // Emit particles
+                    const pos = this.nodeRenderer.getNodeScreenPosition(node);
+                    this.particleSystem.emit(pos.x, pos.y, node.color, 15);
+                }
+            });
+        });
+        
+        propsContainer.querySelectorAll('.property-btn.minus').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const propId = btn.dataset.prop;
+                if (this.tree.refundProperty(node.id, propId)) {
+                    this.updateModal();
+                    this.updateCurrencyDisplay();
+                    this.tree.save();
+                }
+            });
+        });
+    }
+    
+    canRefundProperty(node, prop) {
+        if (prop.level <= 0) return false;
+        
+        const children = this.tree.getChildren(node.id);
+        for (const child of children) {
+            if (child.hasInvestment() && node.getLevel() - 1 < child.requiredParentLevel) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    updateCurrencyDisplay() {
+        document.getElementById('tree-currency').textContent = this.tree.currency;
+    }
+    
+    show() {
+        this.visible = true;
+        this.overlay.classList.add('visible');
+        this.resize();
+        this.updateCurrencyDisplay();
+        this.startRenderLoop();
+    }
+    
+    hide() {
+        this.visible = false;
+        this.overlay.classList.remove('visible');
+        this.closeModal();
+        if (this.onClose) this.onClose();
+    }
+    
+    resize() {
+        const container = this.overlay.querySelector('.tree-canvas-container');
+        this.canvas.width = container.clientWidth;
+        this.canvas.height = container.clientHeight;
+    }
+    
+    startRenderLoop() {
+        let lastTime = performance.now();
+        
+        const render = (currentTime) => {
+            if (!this.visible) return;
+            
+            const deltaTime = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            
+            this.update(deltaTime);
+            this.render();
+            
+            requestAnimationFrame(render);
+        };
+        
+        requestAnimationFrame(render);
+    }
+    
+    update(deltaTime) {
+        // Update animation phase
+        this.glowPhase += deltaTime * 2;
+        
+        // Update canvas controller
+        this.canvasController.update(deltaTime);
+        
+        // Update animations
+        this.animationEngine.update(deltaTime);
+        
+        // Update particles
+        this.particleSystem.update(deltaTime);
+        
+        // Update controls
+        this.controlsController.update();
+    }
+    
+    render() {
+        const ctx = this.canvasController.ctx;
+        
+        // Clear canvas
+        this.canvasController.clear();
+        
+        // Draw connections first
+        for (const node of this.tree.getAllNodes()) {
+            if (node.parentId) {
+                this.connectionRenderer.renderConnection(node, this.tree, this.glowPhase);
+            }
+        }
+        
+        // Draw nodes
+        for (const node of this.tree.getAllNodes()) {
+            this.nodeRenderer.renderNode(node, this.tree, this.hoverNode, this.glowPhase);
+        }
+        
+        // Draw particles
+        this.particleSystem.render(ctx);
+        
+        // Draw minimap
+        this.miniMapController.render(this.tree);
     }
     
     addStyles() {
@@ -97,7 +1046,6 @@ class UpgradeUI {
                 z-index: 1000;
                 display: none;
                 flex-direction: column;
-                align-items: center;
                 font-family: 'Outfit', sans-serif;
             }
             
@@ -107,15 +1055,17 @@ class UpgradeUI {
             
             .upgrade-header {
                 width: 100%;
-                padding: 24px 40px;
+                padding: 20px 32px;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
                 box-sizing: border-box;
+                background: rgba(0, 0, 0, 0.3);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             }
             
             .upgrade-header h2 {
-                font-size: 24px;
+                font-size: 20px;
                 font-weight: 300;
                 letter-spacing: 4px;
                 text-transform: uppercase;
@@ -190,11 +1140,6 @@ class UpgradeUI {
                 background: rgba(255, 255, 255, 0.1);
             }
             
-            #tree-canvas {
-                display: block;
-                pointer-events: none;
-            }
-            
             .tree-canvas-container {
                 position: relative;
                 flex: 1;
@@ -202,43 +1147,50 @@ class UpgradeUI {
                 overflow: hidden;
             }
             
-            #node-buttons-container {
-                position: absolute;
-                top: 0;
-                left: 0;
-                pointer-events: none;
+            #tree-canvas {
+                display: block;
+                cursor: grab;
             }
             
-            .node-button {
-                position: absolute;
-                width: 60px;
-                height: 60px;
-                border: none;
-                background: transparent;
+            #tree-canvas:active {
+                cursor: grabbing;
+            }
+            
+            .zoom-btn {
+                width: 28px;
+                height: 28px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                background: rgba(255, 255, 255, 0.05);
+                color: rgba(255, 255, 255, 0.7);
+                border-radius: 4px;
                 cursor: pointer;
-                pointer-events: auto;
-                border-radius: 12px;
-                transform: translate(-50%, -50%);
-                transition: background 0.2s;
+                font-size: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.15s ease;
             }
             
-            .node-button.locked {
-                cursor: default;
+            .zoom-btn:hover {
+                background: rgba(255, 255, 255, 0.15);
+                border-color: rgba(255, 255, 255, 0.4);
+                color: #fff;
             }
             
-            .node-button:hover {
-                background: rgba(255, 255, 255, 0.1);
-            }
-            
-            .node-button.locked:hover {
-                background: transparent;
+            .zoom-level {
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 12px;
+                min-width: 45px;
+                text-align: center;
             }
             
             .upgrade-footer {
-                padding: 16px;
+                padding: 12px 32px;
                 color: rgba(255, 255, 255, 0.3);
-                font-size: 12px;
+                font-size: 11px;
                 letter-spacing: 1px;
+                background: rgba(0, 0, 0, 0.3);
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
             }
             
             /* Modal Styles */
@@ -377,6 +1329,12 @@ class UpgradeUI {
                 color: rgba(255, 255, 255, 0.4);
             }
             
+            .property-value {
+                font-size: 11px;
+                color: rgba(100, 200, 255, 0.8);
+                font-weight: 500;
+            }
+            
             .property-controls {
                 display: flex;
                 align-items: center;
@@ -426,12 +1384,6 @@ class UpgradeUI {
                 color: #00d4ff;
             }
             
-            .property-value {
-                font-size: 11px;
-                color: rgba(100, 200, 255, 0.8);
-                font-weight: 500;
-            }
-            
             .property-cost {
                 font-size: 11px;
                 color: rgba(255, 215, 0, 0.8);
@@ -440,444 +1392,5 @@ class UpgradeUI {
             }
         `;
         document.head.appendChild(style);
-    }
-    
-    setupEvents() {
-        // Close button
-        document.getElementById('close-tree').addEventListener('click', () => this.hide());
-        document.getElementById('close-modal').addEventListener('click', () => this.closeModal());
-        
-        // Debug buttons for testing
-        document.getElementById('debug-plus').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.tree.addCurrency(10);
-            this.tree.save();
-            this.updateCurrencyDisplay();
-        });
-        
-        document.getElementById('debug-minus').addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.tree.currency = Math.max(0, this.tree.currency - 10);
-            this.tree.save();
-            this.updateCurrencyDisplay();
-        });
-        
-        // Canvas click for node selection - use overlay click and calculate canvas coords
-        this.canvas.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.handleCanvasClick(e);
-        });
-        this.canvas.addEventListener('mousemove', (e) => this.handleCanvasMove(e));
-        
-        // Also listen on overlay for clicks that might not hit canvas directly
-        this.overlay.addEventListener('click', (e) => {
-            // If clicked on footer or header area, check if it's actually over a node
-            const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
-            // Only process if click is within canvas bounds
-            if (x >= 0 && x <= this.canvas.width && y >= 0 && y <= this.canvas.height) {
-                console.log('Overlay click within canvas bounds:', x, y);
-                const node = this.getNodeAtPosition(x, y);
-                if (node) {
-                    console.log('Found node:', node.name);
-                    e.stopPropagation();
-                    this.openModal(node);
-                    return;
-                }
-            }
-            
-            // Close modal if clicking outside nodes
-            if (e.target === this.overlay) {
-                this.closeModal();
-            }
-        });
-        
-        // Escape to close
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'Escape') {
-                if (this.modalVisible) {
-                    this.closeModal();
-                } else if (this.visible) {
-                    this.hide();
-                }
-            }
-        });
-    }
-    
-    getNodeScreenPosition(node) {
-        const x = this.centerX + node.x * this.nodeSpacing;
-        const y = this.centerY + node.y * this.nodeSpacing;
-        return { x, y };
-    }
-    
-    getNodeAtPosition(mouseX, mouseY) {
-        for (const node of this.tree.getAllNodes()) {
-            const pos = this.getNodeScreenPosition(node);
-            const dx = mouseX - pos.x;
-            const dy = mouseY - pos.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            
-            if (dist < this.nodeSize / 2) {
-                return node;
-            }
-        }
-        return null;
-    }
-    
-    handleCanvasClick(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        console.log('Canvas click at:', x, y);
-        
-        const node = this.getNodeAtPosition(x, y);
-        console.log('Node at position:', node ? node.name : 'none');
-        
-        if (node) {
-            e.preventDefault();
-            this.openModal(node);
-        }
-    }
-    
-    handleCanvasMove(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        this.hoverNode = this.getNodeAtPosition(x, y);
-        this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'default';
-    }
-    
-    openModal(node) {
-        if (!node.isUnlocked(this.tree)) return;
-        this.selectedNode = node;
-        this.modalVisible = true;
-        this.modal.classList.add('visible');
-        this.updateModal();
-    }
-    
-    closeModal() {
-        this.modalVisible = false;
-        this.modal.classList.remove('visible');
-        this.selectedNode = null;
-        this.createNodeButtons(); // Refresh buttons in case unlock status changed
-    }
-    
-    updateModal() {
-        if (!this.selectedNode) return;
-        
-        const node = this.selectedNode;
-        const isUnlocked = node.isUnlocked(this.tree);
-        
-        document.getElementById('modal-icon').textContent = node.icon;
-        document.getElementById('modal-icon').style.color = node.color;
-        document.getElementById('modal-title').textContent = node.name;
-        document.getElementById('modal-description').textContent = node.description;
-        const maxLevel = node.properties.reduce((sum, prop) => sum + prop.maxLevel, 0);
-        document.getElementById('modal-level').textContent = `${node.getLevel()}/${maxLevel}`;
-        
-        const propsContainer = document.getElementById('modal-properties');
-        propsContainer.innerHTML = '';
-        
-        for (const prop of node.properties) {
-            const row = document.createElement('div');
-            row.className = 'property-row';
-            
-            const upgradeCost = prop.getUpgradeCost();
-            const canUpgrade = isUnlocked && prop.level < prop.maxLevel && this.tree.currency >= upgradeCost;
-            const canRefund = prop.level > 0 && this.canRefundProperty(node, prop);
-            
-            const effectiveValue = prop.getValue();
-            const formattedValue = prop.effectType === 'multiply' 
-                ? `×${effectiveValue.toFixed(2)}` 
-                : effectiveValue.toFixed(1);
-            
-            row.innerHTML = `
-                <div class="property-icon" style="color: ${node.color}">${prop.icon}</div>
-                <div class="property-info">
-                    <div class="property-name">${prop.name}</div>
-                    <div class="property-desc">${prop.description}</div>
-                    <div class="property-value">Current: ${formattedValue}</div>
-                </div>
-                <div class="property-controls">
-                    <button class="property-btn minus" data-prop="${prop.id}" ${!canRefund ? 'disabled' : ''}>−</button>
-                    <span class="property-cost">${upgradeCost === Infinity ? 'MAX' : upgradeCost + '◆'}</span>
-                    <button class="property-btn plus" data-prop="${prop.id}" ${!canUpgrade ? 'disabled' : ''}>+</button>
-                    <span class="property-cost">${prop.level}/${prop.maxLevel}</span>
-                </div>
-            `;
-            
-            propsContainer.appendChild(row);
-        }
-        
-        // Add button listeners
-        propsContainer.querySelectorAll('.property-btn.plus').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const propId = btn.dataset.prop;
-                if (this.tree.upgradeProperty(node.id, propId)) {
-                    this.updateModal();
-                    this.updateCurrencyDisplay();
-                    this.tree.save();
-                }
-            });
-        });
-        
-        propsContainer.querySelectorAll('.property-btn.minus').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const propId = btn.dataset.prop;
-                if (this.tree.refundProperty(node.id, propId)) {
-                    this.updateModal();
-                    this.updateCurrencyDisplay();
-                    this.tree.save();
-                }
-            });
-        });
-    }
-    
-    canRefundProperty(node, prop) {
-        if (prop.level <= 0) return false;
-        
-        // Check if refunding would orphan children
-        const children = this.tree.getChildren(node.id);
-        for (const child of children) {
-            if (child.hasInvestment() && node.getLevel() - 1 < child.requiredParentLevel) {
-                return false;
-            }
-        }
-        return true;
-    }
-    
-    updateCurrencyDisplay() {
-        document.getElementById('tree-currency').textContent = this.tree.currency;
-    }
-    
-    show() {
-        this.visible = true;
-        this.overlay.classList.add('visible');
-        this.resize();
-        this.updateCurrencyDisplay();
-        this.startRenderLoop();
-    }
-    
-    hide() {
-        this.visible = false;
-        this.overlay.classList.remove('visible');
-        this.closeModal();
-        if (this.onClose) this.onClose();
-    }
-    
-    resize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight - 140;
-        this.centerX = this.canvas.width / 2;
-        this.centerY = 140;
-        
-        // Match button container to canvas size
-        this.nodeButtonsContainer.style.width = `${this.canvas.width}px`;
-        this.nodeButtonsContainer.style.height = `${this.canvas.height}px`;
-        
-        this.createNodeButtons();
-    }
-    
-    createNodeButtons() {
-        // Clear existing buttons
-        this.nodeButtonsContainer.innerHTML = '';
-        
-        // Create a button for each node
-        for (const node of this.tree.getAllNodes()) {
-            const pos = this.getNodeScreenPosition(node);
-            const isUnlocked = node.isUnlocked(this.tree);
-            
-            const btn = document.createElement('button');
-            btn.className = `node-button ${!isUnlocked ? 'locked' : ''}`;
-            btn.style.left = `${pos.x}px`;
-            btn.style.top = `${pos.y-90}px`; // TODO: Un-hardcode this
-            btn.dataset.nodeId = node.id;
-            btn.title = isUnlocked ? node.name : 'Locked';
-            
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (node.isUnlocked(this.tree)) {
-                    console.log('Node button clicked:', node.name);
-                    this.openModal(node);
-                }
-            });
-            
-            this.nodeButtonsContainer.appendChild(btn);
-        }
-    }
-    
-    startRenderLoop() {
-        const render = () => {
-            if (!this.visible) return;
-            
-            this.glowPhase += 0.03;
-            this.render();
-            requestAnimationFrame(render);
-        };
-        render();
-    }
-    
-    render() {
-        const ctx = this.ctx;
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Draw connections first
-        for (const node of this.tree.getAllNodes()) {
-            if (node.parentId) {
-                this.renderConnection(node);
-            }
-        }
-        
-        // Draw nodes
-        for (const node of this.tree.getAllNodes()) {
-            this.renderNode(node);
-        }
-    }
-    
-    renderConnection(node) {
-        const ctx = this.ctx;
-        const parent = this.tree.getNode(node.parentId);
-        if (!parent) return;
-        
-        const startPos = this.getNodeScreenPosition(parent);
-        const endPos = this.getNodeScreenPosition(node);
-        
-        const isUnlocked = node.isUnlocked(this.tree);
-        const hasInvestment = node.hasInvestment();
-        const parentHasInvestment = parent.hasInvestment();
-        
-        // Determine line style
-        let alpha = 0.15;
-        let lineWidth = 2;
-        let glowColor = null;
-        
-        if (hasInvestment) {
-            alpha = 0.6;
-            lineWidth = 3;
-            glowColor = node.color;
-        } else if (isUnlocked && parentHasInvestment) {
-            // Unlockable - soft glow
-            alpha = 0.3 + Math.sin(this.glowPhase) * 0.15;
-            lineWidth = 2;
-            glowColor = node.color;
-        }
-        
-        // Draw glow
-        if (glowColor) {
-            ctx.beginPath();
-            ctx.moveTo(startPos.x, startPos.y);
-            ctx.lineTo(endPos.x, endPos.y);
-            ctx.strokeStyle = glowColor;
-            ctx.lineWidth = lineWidth + 6;
-            ctx.globalAlpha = alpha * 0.3;
-            ctx.stroke();
-            ctx.globalAlpha = 1;
-        }
-        
-        // Draw line
-        ctx.beginPath();
-        ctx.moveTo(startPos.x, startPos.y);
-        ctx.lineTo(endPos.x, endPos.y);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
-        ctx.lineWidth = lineWidth;
-        ctx.stroke();
-    }
-    
-    renderNode(node) {
-        const ctx = this.ctx;
-        const pos = this.getNodeScreenPosition(node);
-        const size = this.nodeSize;
-        const halfSize = size / 2;
-        const radius = 12;
-        
-        const isUnlocked = node.isUnlocked(this.tree);
-        const hasInvestment = node.hasInvestment();
-        const level = node.getLevel();
-        const isHovered = this.hoverNode === node;
-        
-        // Determine visual state
-        let bgAlpha = 0.1;
-        let borderAlpha = 0.2;
-        let iconAlpha = 0.4;
-        let glowIntensity = 0;
-        
-        if (hasInvestment) {
-            bgAlpha = 0.2;
-            borderAlpha = 0.6;
-            iconAlpha = 1;
-            glowIntensity = 0.4 + Math.sin(this.glowPhase * 1.5) * 0.1;
-        } else if (isUnlocked) {
-            const parent = this.tree.getNode(node.parentId);
-            if (!parent || parent.hasInvestment()) {
-                // Unlockable
-                bgAlpha = 0.1;
-                borderAlpha = 0.3 + Math.sin(this.glowPhase) * 0.1;
-                iconAlpha = 0.6;
-                glowIntensity = 0.15 + Math.sin(this.glowPhase) * 0.1;
-            }
-        }
-        
-        if (isHovered) {
-            bgAlpha += 0.1;
-            borderAlpha += 0.2;
-            glowIntensity += 0.1;
-        }
-        
-        // Draw outer glow
-        if (glowIntensity > 0) {
-            const gradient = ctx.createRadialGradient(
-                pos.x, pos.y, halfSize * 0.5,
-                pos.x, pos.y, halfSize * 2
-            );
-            gradient.addColorStop(0, `${node.color}${Math.floor(glowIntensity * 80).toString(16).padStart(2, '0')}`);
-            gradient.addColorStop(1, 'transparent');
-            
-            ctx.fillStyle = gradient;
-            ctx.fillRect(pos.x - halfSize * 2, pos.y - halfSize * 2, size * 2, size * 2);
-        }
-        
-        // Draw background
-        ctx.beginPath();
-        ctx.roundRect(pos.x - halfSize, pos.y - halfSize, size, size, radius);
-        ctx.fillStyle = `rgba(30, 30, 40, ${bgAlpha + 0.8})`;
-        ctx.fill();
-        
-        // Draw border
-        ctx.strokeStyle = hasInvestment ? node.color : `rgba(255, 255, 255, ${borderAlpha})`;
-        ctx.lineWidth = hasInvestment ? 2 : 1;
-        ctx.stroke();
-        
-        // Draw icon
-        ctx.font = '24px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = hasInvestment ? node.color : `rgba(255, 255, 255, ${iconAlpha})`;
-        ctx.fillText(node.icon, pos.x, pos.y - 4);
-        
-        // Determine level text to display
-        let levelText = level.toString();
-        if (!node.isRoot && node.parentId && !isUnlocked) {
-            const parent = this.tree.getNode(node.parentId);
-            if (parent) {
-                const diff = parent.getLevel() - node.requiredParentLevel;
-                if (diff < 0) levelText = diff.toString();
-            }
-        }
-        
-        // Draw level number below
-        ctx.font = '600 14px Outfit, sans-serif';
-        ctx.fillStyle = hasInvestment ? '#ffd700' : `rgba(255, 255, 255, ${iconAlpha * 0.6})`;
-        ctx.fillText(levelText, pos.x, pos.y + halfSize + 16);
-        
-        // Draw name below level (only if invested or hovered)
-        if (hasInvestment || isHovered) {
-            ctx.font = '11px Outfit, sans-serif';
-            ctx.fillStyle = `rgba(255, 255, 255, 0.5)`;
-            ctx.fillText(node.name, pos.x, pos.y + halfSize + 32);
-        }
     }
 }

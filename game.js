@@ -9,16 +9,19 @@ class Game {
         this.physics = new Physics();
         
         // Game state
-        this.state = 'playing'; // 'playing', 'gameOver'
-        this.score = 0;
+        this.state = 'mainMenu'; // 'playing', 'paused', 'gameOver', 'mainMenu'
+        this.runScore = 0; // Treats collected this run
         this.gameTime = 0;
         
-        // Upgrades
-        this.upgrades = {
-            strength: 1,
-            radius: 1,
-            duration: 1
-        };
+        // Upgrade tree (persistent)
+        this.upgradeTree = createDefaultUpgradeTree();
+        this.upgradeTree.load();
+        
+        // Upgrade UI
+        this.upgradeUI = new UpgradeUI(this.upgradeTree, () => {
+            // On close callback - update UI and potentially restart
+            this.updateUI();
+        });
         
         // Screen shake
         this.shakeIntensity = 0;
@@ -46,8 +49,8 @@ class Game {
         // Initialize
         this.resize();
         this.setupEventListeners();
-        this.reset();
         this.initBackgroundParticles();
+        this.showMainMenu();
         
         // Start game loop
         requestAnimationFrame((t) => this.loop(t));
@@ -78,10 +81,51 @@ class Game {
         // Prevent context menu on right click
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
         
-        // Keyboard for restart
+        // Keyboard for pause and restart
         window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' && this.state === 'gameOver') {
-                this.reset();
+            if (e.code === 'Space' && !this.upgradeUI.visible) {
+                if (this.state === 'playing') {
+                    this.pause();
+                } else if (this.state === 'paused') {
+                    this.resume();
+                } else if (this.state === 'gameOver' || this.state === 'mainMenu') {
+                    this.reset();
+                }
+            }
+            
+            if (e.code === 'Escape' && this.state === 'playing' && !this.upgradeUI.visible) {
+                this.pause();
+            }
+        });
+        
+        // Game over buttons
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            this.reset();
+        });
+        
+        document.getElementById('btn-upgrades').addEventListener('click', () => {
+            this.upgradeUI.show();
+        });
+        
+        // Main menu buttons
+        document.getElementById('btn-play').addEventListener('click', () => {
+            this.reset();
+        });
+        
+        document.getElementById('btn-resume').addEventListener('click', () => {
+            this.resume();
+        });
+        
+        document.getElementById('btn-menu-upgrades').addEventListener('click', () => {
+            this.upgradeUI.show();
+        });
+
+        // HUD Pause button
+        document.getElementById('btn-pause-hud').addEventListener('click', () => {
+            if (this.state === 'playing') {
+                this.pause();
+            } else if (this.state === 'paused') {
+                this.resume();
             }
         });
     }
@@ -103,9 +147,8 @@ class Game {
     
     reset() {
         this.state = 'playing';
-        this.score = 0;
+        this.runScore = 0;
         this.gameTime = 0;
-        this.upgrades = { strength: 1, radius: 1, duration: 1 };
         
         // Reset dot at center
         this.dot = new Dot(this.canvas.width / 2, this.canvas.height / 2);
@@ -121,12 +164,71 @@ class Game {
         // Update UI
         this.updateUI();
         
-        // Hide game over screen
+        // Hide screens
         document.getElementById('game-over').classList.remove('visible');
+        document.getElementById('main-menu').classList.remove('visible');
+        
+        // Show HUD pause button
+        const hudBtn = document.getElementById('btn-pause-hud');
+        hudBtn.style.display = 'flex';
+        hudBtn.innerHTML = '<span class="btn-icon">II</span> Pause';
+    }
+    
+    pause() {
+        if (this.state !== 'playing') return;
+        this.state = 'paused';
+        document.getElementById('main-menu').classList.add('visible');
+        document.getElementById('btn-resume').style.display = 'flex';
+        document.getElementById('btn-play').innerHTML = '<span class="btn-icon">↻</span> Restart';
+        document.getElementById('restart-hint').textContent = 'Press Space to resume';
+        
+        // Update HUD button
+        const hudBtn = document.getElementById('btn-pause-hud');
+        hudBtn.innerHTML = '<span class="btn-icon">▶</span> Resume';
+    }
+    
+    resume() {
+        if (this.state !== 'paused') return;
+        this.state = 'playing';
+        document.getElementById('main-menu').classList.remove('visible');
+        
+        // Update HUD button
+        const hudBtn = document.getElementById('btn-pause-hud');
+        hudBtn.innerHTML = '<span class="btn-icon">II</span> Pause';
+    }
+    
+    showMainMenu() {
+        this.state = 'mainMenu';
+        document.getElementById('main-menu').classList.add('visible');
+        document.getElementById('btn-resume').style.display = 'none';
+        document.getElementById('btn-play').innerHTML = '<span class="btn-icon">▶</span> Play';
+        document.getElementById('restart-hint').textContent = 'Press Space to start';
+        document.getElementById('btn-pause-hud').style.display = 'none';
+    }
+    
+    /**
+     * Get current upgrade stats from the tree
+     */
+    getStats() {
+        return this.upgradeTree.getStats();
     }
     
     placeMagnet(x, y, type) {
-        const magnet = new Magnet(x, y, type, this.upgrades);
+        const stats = this.getStats();
+        
+        // Check magnet limit
+        const limit = type === 'attract' ? stats.attractLimit : stats.repelLimit;
+        const currentCount = this.magnets.filter(m => m.type === type).length;
+        if (currentCount >= limit) return;
+        
+        // Create upgrade object for magnet based on tree stats
+        const upgrades = {
+            strength: type === 'attract' ? stats.attractStrength : stats.repelStrength,
+            radius: type === 'attract' ? stats.attractRadius : stats.repelRadius,
+            duration: type === 'attract' ? stats.attractDuration : stats.repelDuration
+        };
+        
+        const magnet = new Magnet(x, y, type, upgrades);
         this.magnets.push(magnet);
         
         // Spawn particles at magnet location
@@ -155,9 +257,8 @@ class Game {
     }
     
     spawnDanger() {
-        const patterns = ['static', 'orbit', 'patrol'];
-        const pattern = patterns[Math.floor(Math.random() * patterns.length)];
-        const radius = 20 + Math.random() * 20;
+        const isGoldDigger = Math.random() < 0.2;
+        const radius = isGoldDigger ? 15 : 20 + Math.random() * 20;
         
         const pos = this.physics.findSafeSpawnPosition(
             this.dot, this.dangers,
@@ -165,8 +266,15 @@ class Game {
             radius + 50, 200
         );
         
-        const danger = new Danger(pos.x, pos.y, radius, pattern);
-        this.dangers.push(danger);
+        if (isGoldDigger) {
+            const danger = new GoldDigger(pos.x, pos.y, radius);
+            this.dangers.push(danger);
+        } else {
+            const patterns = ['static', 'orbit', 'patrol'];
+            const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+            const danger = new Danger(pos.x, pos.y, radius, pattern);
+            this.dangers.push(danger);
+        }
     }
     
     spawnTreat() {
@@ -182,18 +290,50 @@ class Game {
     
     collectTreat(treat) {
         if (treat.collect()) {
-            this.score++;
+            this.runScore++;
             
-            // Random upgrade
-            const upgradeTypes = ['strength', 'radius', 'duration'];
-            const type = upgradeTypes[Math.floor(Math.random() * upgradeTypes.length)];
-            this.upgrades[type]++;
+            // Add to persistent currency
+            this.upgradeTree.addCurrency(1);
+            this.upgradeTree.save();
             
             // Spawn celebration particles
             this.spawnCollectParticles(treat.x, treat.y);
             
             // Update UI
             this.updateUI();
+        }
+    }
+    
+    killDanger(danger) {
+        // Find index of danger
+        const index = this.dangers.indexOf(danger);
+        if (index !== -1) {
+            this.dangers.splice(index, 1);
+            
+            // Screen shake
+            this.shakeIntensity = 10;
+            
+            // Spawn explosion particles
+            this.spawnExplosionParticles(danger.x, danger.y, '220, 40, 80');
+        }
+    }
+    
+    spawnExplosionParticles(x, y, color) {
+        const count = 30;
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 150 + Math.random() * 200;
+            
+            this.particles.push({
+                x,
+                y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1,
+                decay: 1 + Math.random() * 2,
+                size: 3 + Math.random() * 5,
+                color
+            });
         }
     }
     
@@ -221,23 +361,28 @@ class Game {
         this.shakeIntensity = 20;
         
         // Update game over screen
-        document.getElementById('final-score').textContent = `${this.score} Treats`;
+        document.getElementById('final-score').textContent = `+${this.runScore} Treats`;
         document.getElementById('game-over').classList.add('visible');
+        document.getElementById('btn-pause-hud').style.display = 'none';
     }
     
     updateUI() {
-        document.getElementById('treat-count').textContent = this.score;
-        document.getElementById('strength-level').textContent = this.upgrades.strength;
-        document.getElementById('radius-level').textContent = this.upgrades.radius;
-        document.getElementById('duration-level').textContent = this.upgrades.duration;
+        document.getElementById('treat-count').textContent = this.upgradeTree.currency;
+        document.getElementById('run-treats').textContent = this.runScore;
     }
     
     update(dt) {
+        if (this.state === 'paused' || this.state === 'mainMenu') {
+            this.updateBackgroundParticles(dt);
+            return;
+        }
+
         if (this.state === 'gameOver') {
             // Still update some things for visual effect
-            this.dot.update(dt);
+            if (this.dot) this.dot.update(dt);
             this.shakeIntensity = Math.max(0, this.shakeIntensity - this.shakeDecay * dt);
             this.updateParticles(dt);
+            this.updateBackgroundParticles(dt);
             return;
         }
         
@@ -262,6 +407,91 @@ class Game {
         const forces = this.physics.calculateMagneticForces(this.dot, this.magnets);
         this.dot.applyForce(forces.fx * dt, forces.fy * dt);
         
+        // Get stats for treat attraction effects
+        const stats = this.getStats();
+        
+        // Apply treat attraction forces (treats pull the dot)
+        if (stats.treatAttraction > 0) {
+            const treatAttractionStrength = 8000 * stats.treatAttraction;
+            const treatAttractionRadius = 300;
+            
+            for (const treat of this.treats) {
+                if (treat.collected) continue;
+                
+                const dx = treat.x - this.dot.x;
+                const dy = treat.y - this.dot.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > treatAttractionRadius || distance < 1) continue;
+                
+                const radiusFactor = 1 - (distance / treatAttractionRadius);
+                const forceMagnitude = (treatAttractionStrength * radiusFactor) / Math.max(distance, 20);
+                
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                this.dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
+            }
+        }
+        
+        // Make treats move towards dot (dot attracts treats)
+        if (stats.attractTreats > 0) {
+            const treatAttractionStrength = 6000 * stats.attractTreats;
+            const treatAttractionRadius = 250;
+            
+            for (const treat of this.treats) {
+                if (treat.collected) continue;
+                
+                const dx = this.dot.x - treat.x;
+                const dy = this.dot.y - treat.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > treatAttractionRadius || distance < 20) continue;
+                
+                // Use similar force calculation as magnets for smooth movement
+                const radiusFactor = 1 - (distance / treatAttractionRadius);
+                const effectiveDistance = Math.max(distance, 20);
+                const forceMagnitude = (treatAttractionStrength * radiusFactor) / effectiveDistance;
+                
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Apply force to treat (velocity-based, not direct position)
+                treat.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
+            }
+        }
+
+        // Apply danger repulsion forces (dangers push the dot away)
+        if (stats.dangerRepulsion > 0 || stats.goldDiggerRepulsion > 0) {
+            const dangerRepulsionStrength = 4000 * stats.dangerRepulsion;
+            const dangerRepulsionRadius = 250;
+            const goldDiggerRepulsionStrength = 12000 * stats.goldDiggerRepulsion;
+            const goldDiggerRepulsionRadius = 300;
+
+            for (const danger of this.dangers) {
+                const isGoldDigger = danger.isGoldDigger;
+                const strength = isGoldDigger ? goldDiggerRepulsionStrength : dangerRepulsionStrength;
+                const radius = isGoldDigger ? goldDiggerRepulsionRadius : dangerRepulsionRadius;
+
+                if (strength <= 0) continue;
+
+                const dx = this.dot.x - danger.x;
+                const dy = this.dot.y - danger.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > radius || distance < 1) continue;
+
+                const radiusFactor = 1 - (distance / radius);
+                const effectiveDistance = Math.max(distance, 20);
+                const forceMagnitude = (strength * radiusFactor) / effectiveDistance;
+
+                const nx = dx / distance;
+                const ny = dy / distance;
+
+                this.dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
+            }
+        }
+        
         // Update dot
         this.dot.update(dt);
         this.physics.constrainToBounds(this.dot, this.canvas.width, this.canvas.height);
@@ -276,7 +506,7 @@ class Game {
         
         // Update dangers
         for (const danger of this.dangers) {
-            danger.update(dt);
+            danger.update(dt, this.dot, this.runScore);
         }
         
         // Update treats and remove finished ones
@@ -290,8 +520,22 @@ class Game {
         // Check collisions
         const dangerHit = this.physics.checkDangerCollisions(this.dot, this.dangers);
         if (dangerHit) {
-            this.dot.die();
-            this.gameOver();
+            const annihalationNode = this.upgradeTree.getNode('annihalation');
+            if (annihalationNode && annihalationNode.getLevel() > 0) {
+                const cost = annihalationNode.getPropertyValue('annihalationCost');
+                if (this.runScore >= cost) {
+                    // Annihalate!
+                    this.runScore -= cost;
+                    this.updateUI();
+                    this.killDanger(dangerHit);
+                } else {
+                    this.dot.die();
+                    this.gameOver();
+                }
+            } else {
+                this.dot.die();
+                this.gameOver();
+            }
         }
         
         const treatHit = this.physics.checkTreatCollisions(this.dot, this.treats);
@@ -340,6 +584,14 @@ class Game {
     render() {
         const ctx = this.ctx;
         
+        // Clear and draw background
+        this.renderBackground();
+        
+        // Draw background particles
+        this.renderBackgroundParticles();
+        
+        if (this.state === 'mainMenu') return;
+        
         // Apply screen shake
         ctx.save();
         if (this.shakeIntensity > 0) {
@@ -347,12 +599,6 @@ class Game {
             const shakeY = (Math.random() - 0.5) * this.shakeIntensity;
             ctx.translate(shakeX, shakeY);
         }
-        
-        // Clear and draw background
-        this.renderBackground();
-        
-        // Draw background particles
-        this.renderBackgroundParticles();
         
         // Draw magnets (under everything else)
         for (const magnet of this.magnets) {
@@ -373,7 +619,7 @@ class Game {
         this.renderParticles();
         
         // Draw dot (on top)
-        this.dot.render(ctx);
+        if (this.dot) this.dot.render(ctx);
         
         ctx.restore();
     }

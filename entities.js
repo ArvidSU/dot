@@ -125,12 +125,12 @@ class Magnet {
         this.type = type; // 'attract' or 'repel'
         this.baseStrength = 80000;
         this.baseRadius = 400;
-        this.baseDuration = 3;
+        this.baseDuration = 0.5;
         
-        // Apply upgrades
-        this.strength = this.baseStrength * (1 + (upgrades.strength - 1) * 0.4);
-        this.radius = this.baseRadius * (1 + (upgrades.radius - 1) * 0.25);
-        this.duration = this.baseDuration * (1 + (upgrades.duration - 1) * 0.3);
+        // Apply upgrades (upgrades contains multipliers directly from upgrade tree)
+        this.strength = this.baseStrength * (upgrades.strength || 1);
+        this.radius = this.baseRadius * ((upgrades.radius^2)/2 || 1);
+        this.duration = this.baseDuration * (upgrades.duration || 1);
         
         this.age = 0;
         this.dead = false;
@@ -142,7 +142,8 @@ class Magnet {
         this.ripples.push({
             radius: 0,
             alpha: 1,
-            speed: this.type === 'attract' ? -1 : 1
+            speed: this.type === 'attract' ? -1 : 1,
+            baseRadius: this.radius
         });
     }
     
@@ -163,10 +164,10 @@ class Magnet {
             const ripple = this.ripples[i];
             if (this.type === 'attract') {
                 // Ripples move inward
-                ripple.radius = Math.max(0, this.radius * (1 - (ripple.alpha)));
+                ripple.radius = Math.max(0, ripple.baseRadius * (1 - (ripple.alpha)));
             } else {
                 // Ripples move outward
-                ripple.radius = this.radius * (1 - ripple.alpha);
+                ripple.radius = ripple.baseRadius * (1 - ripple.alpha);
             }
             ripple.alpha -= dt * 0.8;
             
@@ -248,7 +249,7 @@ class Danger {
         this.patrolDirection = 1;
     }
     
-    update(dt) {
+    update(dt, target, runScore) {
         this.angle += this.rotationSpeed * dt;
         this.pulsePhase += dt * 3;
         
@@ -327,10 +328,97 @@ class Danger {
     }
 }
 
+class GoldDigger {
+    constructor(x, y, radius) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.angle = Math.random() * Math.PI * 2;
+        this.rotationSpeed = 2;
+        this.pulsePhase = Math.random() * Math.PI * 2;
+        this.isGoldDigger = true; // Flag to identify this type
+    }
+
+    update(dt, target, runScore) {
+        if (!target || !target.alive) return;
+
+        this.angle += this.rotationSpeed * dt;
+        this.pulsePhase += dt * 5;
+
+        // Calculate speed based on runScore
+        const speed = 30 + (runScore * 8);
+
+        // Move towards target
+        const dx = target.x - this.x;
+        const dy = target.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 1) {
+            this.x += (dx / dist) * speed * dt;
+            this.y += (dy / dist) * speed * dt;
+        }
+    }
+
+    render(ctx) {
+        const pulse = 1 + Math.sin(this.pulsePhase) * 0.15;
+        const r = this.radius * pulse;
+
+        // Golden outer glow
+        const glowGradient = ctx.createRadialGradient(
+            this.x, this.y, r * 0.5,
+            this.x, this.y, r * 2
+        );
+        glowGradient.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
+        glowGradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, r * 2, 0, Math.PI * 2);
+        ctx.fillStyle = glowGradient;
+        ctx.fill();
+
+        // Main body - Hexagon/Diamond shape for Gold Digger
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+
+        ctx.beginPath();
+        const sides = 4;
+        for (let i = 0; i < sides; i++) {
+            const a = (i / sides) * Math.PI * 2;
+            const px = Math.cos(a) * r;
+            const py = Math.sin(a) * r;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+
+        const bodyGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+        bodyGradient.addColorStop(0, '#fff8dc');
+        bodyGradient.addColorStop(0.5, '#ffd700');
+        bodyGradient.addColorStop(1, '#daa520');
+        ctx.fillStyle = bodyGradient;
+        ctx.fill();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Inner detail
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.4, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.stroke();
+
+        ctx.restore();
+    }
+}
+
 class Treat {
     constructor(x, y) {
         this.x = x;
         this.y = y;
+        this.vx = 0;
+        this.vy = 0;
         this.radius = 12;
         this.collected = false;
         this.collectAnimation = 0;
@@ -355,6 +443,16 @@ class Treat {
             return this.collectAnimation >= 1;
         }
         
+        // Apply velocity with damping
+        const damping = 0.95;
+        this.vx *= damping;
+        this.vy *= damping;
+        
+        // Update position
+        this.x += this.vx * dt;
+        this.baseY += this.vy * dt;
+        
+        // Float animation
         this.floatPhase += dt * 2;
         this.y = this.baseY + Math.sin(this.floatPhase) * 5;
         
@@ -365,6 +463,11 @@ class Treat {
         }
         
         return false;
+    }
+    
+    applyForce(fx, fy) {
+        this.vx += fx;
+        this.vy += fy;
     }
     
     collect() {

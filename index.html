@@ -37,45 +37,42 @@
         }
         
         #score {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             font-size: 14px;
             font-weight: 300;
             letter-spacing: 2px;
             text-transform: uppercase;
             color: rgba(255, 255, 255, 0.6);
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
         
-        #score span {
+        #score .currency-icon {
             color: #ffd700;
-            font-weight: 600;
-        }
-        
-        #upgrades {
-            display: flex;
-            gap: 16px;
-            font-size: 11px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-        }
-        
-        .upgrade {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        
-        .upgrade-label {
-            color: rgba(255, 255, 255, 0.4);
-        }
-        
-        .upgrade-value {
-            font-weight: 600;
             font-size: 16px;
         }
         
-        .upgrade-strength .upgrade-value { color: #00d4ff; }
-        .upgrade-radius .upgrade-value { color: #ff0066; }
-        .upgrade-duration .upgrade-value { color: #ffd700; }
+        #score #treat-count {
+            color: #ffd700;
+            font-weight: 600;
+            font-size: 18px;
+        }
+        
+        #score .currency-label {
+            font-size: 11px;
+            color: rgba(255, 215, 0, 0.5);
+        }
+        
+        #run-score {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.3);
+            letter-spacing: 1px;
+        }
+        
+        #run-score span {
+            color: rgba(255, 215, 0, 0.6);
+        }
         
         #game-over {
             position: fixed;
@@ -94,12 +91,12 @@
             background: rgba(10, 10, 15, 0.9);
         }
         
-        #game-over.visible {
+        #game-over.visible, #main-menu.visible {
             opacity: 1;
             pointer-events: auto;
         }
         
-        #game-over h1 {
+        #game-over h1, #main-menu h1 {
             font-size: 48px;
             font-weight: 300;
             letter-spacing: 8px;
@@ -108,7 +105,12 @@
             color: #ff0066;
         }
         
-        #game-over p {
+        #main-menu h1 {
+            color: #00d4ff;
+            letter-spacing: 12px;
+        }
+        
+        #game-over p, #main-menu p {
             font-size: 14px;
             font-weight: 300;
             letter-spacing: 2px;
@@ -123,12 +125,96 @@
             margin-bottom: 48px;
         }
         
-        #restart-hint {
-            font-size: 12px;
-            letter-spacing: 3px;
+        .game-over-buttons, .menu-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 24px;
+            align-items: center;
+        }
+        
+        .menu-row {
+            display: flex;
+            gap: 16px;
+        }
+        
+        #main-menu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            background: rgba(10, 10, 15, 0.9);
+        }
+        
+        .game-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.7);
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            letter-spacing: 2px;
             text-transform: uppercase;
-            color: rgba(255, 255, 255, 0.3);
-            animation: pulse 2s ease-in-out infinite;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .game-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.4);
+            color: #fff;
+        }
+        
+        .game-btn.primary {
+            background: rgba(0, 212, 255, 0.15);
+            border-color: rgba(0, 212, 255, 0.4);
+            color: #00d4ff;
+        }
+        
+        .game-btn.primary:hover {
+            background: rgba(0, 212, 255, 0.25);
+            border-color: #00d4ff;
+        }
+        
+        .pause-btn {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            padding: 10px 16px;
+            font-size: 12px;
+            z-index: 1000;
+            pointer-events: auto;
+            display: none;
+            background: rgba(10, 10, 15, 0.5);
+            backdrop-filter: blur(4px);
+        }
+        
+        .btn-icon {
+            font-size: 16px;
+        }
+        
+        #btn-upgrades .btn-icon {
+            color: #ffd700;
+        }
+        
+        #restart-hint {
+            font-size: 11px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.2);
         }
         
         @keyframes pulse {
@@ -163,37 +249,69 @@
     <canvas id="game"></canvas>
     
     <div id="ui">
-        <div id="score">Treats: <span id="treat-count">0</span></div>
-        <div id="upgrades">
-            <div class="upgrade upgrade-strength">
-                <span class="upgrade-label">Strength</span>
-                <span class="upgrade-value" id="strength-level">1</span>
-            </div>
-            <div class="upgrade upgrade-radius">
-                <span class="upgrade-label">Radius</span>
-                <span class="upgrade-value" id="radius-level">1</span>
-            </div>
-            <div class="upgrade upgrade-duration">
-                <span class="upgrade-label">Duration</span>
-                <span class="upgrade-value" id="duration-level">1</span>
-            </div>
+        <div id="score">
+            <span class="currency-icon">◆</span> 
+            <span id="treat-count">0</span>
+            <span class="currency-label">treats</span>
+        </div>
+        <div id="run-score">
+            This run: <span id="run-treats">0</span>
         </div>
     </div>
+    
+    <button id="btn-pause-hud" class="game-btn pause-btn">
+        <span class="btn-icon">II</span>
+        Pause
+    </button>
     
     <div id="instructions">
         <span class="attract">Left Click</span> Attract
         <span class="repel">Right Click</span> Repel
     </div>
     
+    <div id="main-menu">
+        <h1>Magnet</h1>
+        <p>Master the fields of attraction and repulsion</p>
+        <div class="menu-buttons">
+            <div class="menu-row">
+                <button id="btn-resume" class="game-btn primary" style="display: none;">
+                    <span class="btn-icon">▶</span>
+                    Resume
+                </button>
+                <button id="btn-play" class="game-btn primary">
+                    <span class="btn-icon">▶</span>
+                    Play
+                </button>
+                <button id="btn-menu-upgrades" class="game-btn">
+                    <span class="btn-icon">◆</span>
+                    Upgrades
+                </button>
+            </div>
+        </div>
+        <div id="restart-hint">Press Space to start</div>
+    </div>
+    
     <div id="game-over">
         <h1>Game Over</h1>
         <p>The dot was consumed by darkness</p>
-        <div id="final-score">0 Treats</div>
-        <div id="restart-hint">Press Space to Restart</div>
+        <div id="final-score">+0 Treats</div>
+        <div class="game-over-buttons">
+            <button id="btn-upgrades" class="game-btn">
+                <span class="btn-icon">◆</span>
+                Upgrades
+            </button>
+            <button id="btn-restart" class="game-btn primary">
+                <span class="btn-icon">↻</span>
+                Play Again
+            </button>
+        </div>
+        <div id="restart-hint">or press Space</div>
     </div>
     
     <script src="entities.js"></script>
     <script src="physics.js"></script>
+    <script src="upgrades.js"></script>
+    <script src="upgrade-ui.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

@@ -586,7 +586,8 @@ class UpgradeUI {
             const row = document.createElement('div');
             row.className = 'property-row';
             
-            const canUpgrade = isUnlocked && prop.level < prop.maxLevel && this.tree.currency >= prop.costPerLevel;
+            const upgradeCost = prop.getUpgradeCost();
+            const canUpgrade = isUnlocked && prop.level < prop.maxLevel && this.tree.currency >= upgradeCost;
             const canRefund = prop.level > 0 && this.canRefundProperty(node, prop);
             
             const effectiveValue = prop.getValue();
@@ -603,7 +604,7 @@ class UpgradeUI {
                 </div>
                 <div class="property-controls">
                     <button class="property-btn minus" data-prop="${prop.id}" ${!canRefund ? 'disabled' : ''}>−</button>
-                    <span class="property-cost">${prop.costPerLevel}◆</span>
+                    <span class="property-cost">${upgradeCost === Infinity ? 'MAX' : upgradeCost + '◆'}</span>
                     <button class="property-btn plus" data-prop="${prop.id}" ${!canUpgrade ? 'disabled' : ''}>+</button>
                     <span class="property-cost">${prop.level}/${prop.maxLevel}</span>
                 </div>

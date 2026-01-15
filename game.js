@@ -29,6 +29,7 @@ class Game {
         
         // Entities
         this.dot = null;
+        this.dots = []; // Array for multiple dots
         this.magnets = [];
         this.dangers = [];
         this.treats = [];
@@ -152,6 +153,7 @@ class Game {
         
         // Reset dot at center
         this.dot = new Dot(this.canvas.width / 2, this.canvas.height / 2);
+        this.dots = [];
         this.magnets = [];
         this.dangers = [];
         this.treats = [];
@@ -299,6 +301,19 @@ class Game {
             // Spawn celebration particles
             this.spawnCollectParticles(treat.x, treat.y);
             
+            // Check for dot rebirth chance
+            const stats = this.getStats();
+            if (stats.spawnDotOnTreat > 0) {
+                const chance = stats.spawnDotOnTreat;
+                if (Math.random() < chance) {
+                    // Spawn a new dot at the treat's location
+                    const newDot = new Dot(treat.x, treat.y);
+                    this.dots.push(newDot);
+                    // Spawn particles to indicate dot creation
+                    this.spawnDotCreationParticles(treat.x, treat.y);
+                }
+            }
+            
             // Update UI
             this.updateUI();
         }
@@ -356,6 +371,40 @@ class Game {
         }
     }
     
+    spawnDotCreationParticles(x, y) {
+        const count = 15;
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 80 + Math.random() * 80;
+            
+            this.particles.push({
+                x,
+                y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 1,
+                decay: 2 + Math.random(),
+                size: 2 + Math.random() * 3,
+                color: '255, 255, 255'
+            });
+        }
+    }
+    
+    handleDotDeath(dot) {
+        // Check for treat legacy chance
+        const stats = this.getStats();
+        if (stats.spawnTreatOnDeath > 0) {
+            const chance = stats.spawnTreatOnDeath;
+            if (Math.random() < chance) {
+                // Spawn a treat at the dot's location
+                const treat = new Treat(dot.x, dot.y);
+                this.treats.push(treat);
+                // Spawn particles to indicate treat creation
+                this.spawnCollectParticles(dot.x, dot.y);
+            }
+        }
+    }
+    
     gameOver() {
         this.state = 'gameOver';
         this.shakeIntensity = 20;
@@ -380,6 +429,9 @@ class Game {
         if (this.state === 'gameOver') {
             // Still update some things for visual effect
             if (this.dot) this.dot.update(dt);
+            for (const dot of this.dots) {
+                dot.update(dt);
+            }
             this.shakeIntensity = Math.max(0, this.shakeIntensity - this.shakeDecay * dt);
             this.updateParticles(dt);
             this.updateBackgroundParticles(dt);
@@ -403,9 +455,16 @@ class Game {
             this.treatSpawnTimer = this.treatSpawnInterval;
         }
         
-        // Apply magnetic forces to dot
+        // Apply magnetic forces to main dot
         const forces = this.physics.calculateMagneticForces(this.dot, this.magnets);
         this.dot.applyForce(forces.fx * dt, forces.fy * dt);
+        
+        // Apply magnetic forces to additional dots
+        for (const dot of this.dots) {
+            if (!dot.alive) continue;
+            const forces = this.physics.calculateMagneticForces(dot, this.magnets);
+            dot.applyForce(forces.fx * dt, forces.fy * dt);
+        }
         
         // Get stats for treat attraction effects
         const stats = this.getStats();
@@ -415,6 +474,7 @@ class Game {
             const treatAttractionStrength = 8000 * stats.treatAttraction;
             const treatAttractionRadius = 300;
             
+            // Apply to main dot
             for (const treat of this.treats) {
                 if (treat.collected) continue;
                 
@@ -432,13 +492,36 @@ class Game {
                 
                 this.dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
             }
+            
+            // Apply to additional dots
+            for (const dot of this.dots) {
+                if (!dot.alive) continue;
+                for (const treat of this.treats) {
+                    if (treat.collected) continue;
+                    
+                    const dx = treat.x - dot.x;
+                    const dy = treat.y - dot.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance > treatAttractionRadius || distance < 1) continue;
+                    
+                    const radiusFactor = 1 - (distance / treatAttractionRadius);
+                    const forceMagnitude = (treatAttractionStrength * radiusFactor) / Math.max(distance, 20);
+                    
+                    const nx = dx / distance;
+                    const ny = dy / distance;
+                    
+                    dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
+                }
+            }
         }
         
-        // Make treats move towards dot (dot attracts treats)
+        // Make treats move towards dots (dots attract treats)
         if (stats.attractTreats > 0) {
             const treatAttractionStrength = 6000 * stats.attractTreats;
             const treatAttractionRadius = 250;
             
+            // Apply to main dot
             for (const treat of this.treats) {
                 if (treat.collected) continue;
                 
@@ -459,6 +542,31 @@ class Game {
                 // Apply force to treat (velocity-based, not direct position)
                 treat.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
             }
+            
+            // Apply to additional dots
+            for (const dot of this.dots) {
+                if (!dot.alive) continue;
+                for (const treat of this.treats) {
+                    if (treat.collected) continue;
+                    
+                    const dx = dot.x - treat.x;
+                    const dy = dot.y - treat.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance > treatAttractionRadius || distance < 20) continue;
+                    
+                    // Use similar force calculation as magnets for smooth movement
+                    const radiusFactor = 1 - (distance / treatAttractionRadius);
+                    const effectiveDistance = Math.max(distance, 20);
+                    const forceMagnitude = (treatAttractionStrength * radiusFactor) / effectiveDistance;
+                    
+                    const nx = dx / distance;
+                    const ny = dy / distance;
+                    
+                    // Apply force to treat (velocity-based, not direct position)
+                    treat.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
+                }
+            }
         }
 
         // Apply danger repulsion forces (dangers push the dot away)
@@ -468,6 +576,7 @@ class Game {
             const goldDiggerRepulsionStrength = 12000 * stats.goldDiggerRepulsion;
             const goldDiggerRepulsionRadius = 300;
 
+            // Apply to main dot
             for (const danger of this.dangers) {
                 const isGoldDigger = danger.isGoldDigger;
                 const strength = isGoldDigger ? goldDiggerRepulsionStrength : dangerRepulsionStrength;
@@ -490,11 +599,50 @@ class Game {
 
                 this.dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
             }
+            
+            // Apply to additional dots
+            for (const dot of this.dots) {
+                if (!dot.alive) continue;
+                for (const danger of this.dangers) {
+                    const isGoldDigger = danger.isGoldDigger;
+                    const strength = isGoldDigger ? goldDiggerRepulsionStrength : dangerRepulsionStrength;
+                    const radius = isGoldDigger ? goldDiggerRepulsionRadius : dangerRepulsionRadius;
+
+                    if (strength <= 0) continue;
+
+                    const dx = dot.x - danger.x;
+                    const dy = dot.y - danger.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance > radius || distance < 1) continue;
+
+                    const radiusFactor = 1 - (distance / radius);
+                    const effectiveDistance = Math.max(distance, 20);
+                    const forceMagnitude = (strength * radiusFactor) / effectiveDistance;
+
+                    const nx = dx / distance;
+                    const ny = dy / distance;
+
+                    dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
+                }
+            }
         }
         
-        // Update dot
+        // Update main dot
         this.dot.update(dt);
         this.physics.constrainToBounds(this.dot, this.canvas.width, this.canvas.height);
+        
+        // Update additional dots
+        for (let i = this.dots.length - 1; i >= 0; i--) {
+            const dot = this.dots[i];
+            dot.update(dt);
+            this.physics.constrainToBounds(dot, this.canvas.width, this.canvas.height);
+            
+            // Remove dead dots
+            if (!dot.alive && dot.deathAnimation >= 1) {
+                this.dots.splice(i, 1);
+            }
+        }
         
         // Update magnets and remove dead ones
         for (let i = this.magnets.length - 1; i >= 0; i--) {
@@ -506,7 +654,30 @@ class Game {
         
         // Update dangers
         for (const danger of this.dangers) {
-            danger.update(dt, this.dot, this.runScore);
+            // Find the closest alive dot to target
+            let closestDot = this.dot;
+            let closestDist = Infinity;
+            
+            // Check main dot
+            if (this.dot.alive) {
+                const dx = this.dot.x - danger.x;
+                const dy = this.dot.y - danger.y;
+                closestDist = Math.sqrt(dx * dx + dy * dy);
+            }
+            
+            // Check additional dots
+            for (const dot of this.dots) {
+                if (!dot.alive) continue;
+                const dx = dot.x - danger.x;
+                const dy = dot.y - danger.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    closestDot = dot;
+                }
+            }
+            
+            danger.update(dt, closestDot, this.runScore);
         }
         
         // Update treats and remove finished ones
@@ -529,18 +700,57 @@ class Game {
                     this.updateUI();
                     this.killDanger(dangerHit);
                 } else {
+                    this.handleDotDeath(this.dot);
                     this.dot.die();
                     this.gameOver();
                 }
             } else {
+                this.handleDotDeath(this.dot);
                 this.dot.die();
                 this.gameOver();
             }
         }
         
+        // Check danger collisions with additional dots
+        for (const dot of this.dots) {
+            if (!dot.alive) continue;
+            const dangerHit = this.physics.checkDangerCollisions(dot, this.dangers);
+            if (dangerHit) {
+                // Check for spawned dot annihilation chance
+                const stats = this.getStats();
+                if (stats.spawnedDotAnnihilation > 0) {
+                    const chance = stats.spawnedDotAnnihilation;
+                    if (Math.random() < chance) {
+                        // Annihilate the danger!
+                        this.killDanger(dangerHit);
+                        this.handleDotDeath(dot);
+                        dot.die();
+                    } else {
+                        // Dot dies normally
+                        this.handleDotDeath(dot);
+                        dot.die();
+                    }
+                } else {
+                    // Dot dies normally
+                    this.handleDotDeath(dot);
+                    dot.die();
+                }
+            }
+        }
+        
+        // Check treat collisions with main dot
         const treatHit = this.physics.checkTreatCollisions(this.dot, this.treats);
         if (treatHit) {
             this.collectTreat(treatHit);
+        }
+        
+        // Check treat collisions with additional dots
+        for (const dot of this.dots) {
+            if (!dot.alive) continue;
+            const treatHit = this.physics.checkTreatCollisions(dot, this.treats);
+            if (treatHit) {
+                this.collectTreat(treatHit);
+            }
         }
         
         // Update particles
@@ -618,8 +828,11 @@ class Game {
         // Draw particles
         this.renderParticles();
         
-        // Draw dot (on top)
+        // Draw dots (on top)
         if (this.dot) this.dot.render(ctx);
+        for (const dot of this.dots) {
+            dot.render(ctx);
+        }
         
         ctx.restore();
     }

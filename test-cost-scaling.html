@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cost Scaling Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #16213e;
+            border-radius: 8px;
+        }
+        .node {
+            margin: 10px 0;
+            padding: 10px;
+            background: #0f3460;
+            border-radius: 5px;
+        }
+        .property {
+            margin: 5px 0 5px 20px;
+            padding: 8px;
+            background: #1a1a2e;
+            border-left: 3px solid #00d4ff;
+        }
+        .cost-row {
+            margin: 3px 0;
+            padding-left: 20px;
+            font-size: 0.9em;
+        }
+        .highlight {
+            color: #00ffcc;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ff6b6b;
+        }
+        .good {
+            color: #51cf66;
+        }
+        h1 { color: #00d4ff; }
+        h2 { color: #00ffcc; }
+        h3 { color: #ffd700; }
+    </style>
+</head>
+<body>
+    <h1>Dynamic Cost Scaling Analysis</h1>
+    <div id="output"></div>
+
+    <script src="upgrades.js"></script>
+    <script>
+        // Create the upgrade tree
+        const tree = createDefaultUpgradeTree();
+        const output = document.getElementById('output');
+
+        function addSection(title, content) {
+            const section = document.createElement('div');
+            section.className = 'section';
+            section.innerHTML = `<h2>${title}</h2>${content}`;
+            output.appendChild(section);
+        }
+
+        function addNode(node) {
+            let html = `
+                <div class="node">
+                    <h3>${node.name} <span style="font-size: 0.8em; color: #888;">(${node.id})</span></h3>
+                    <p>Position: (${node.x}, ${node.y}) | Parent: ${node.parentId || 'Root'}</p>
+            `;
+
+            for (const prop of node.properties) {
+                html += `
+                    <div class="property">
+                        <strong>${prop.name}</strong> (${prop.id})<br>
+                        Effect: ${prop.effectType} | Value/Level: ${prop.valuePerLevel} | Max Level: ${prop.maxLevel}<br>
+                        <span class="cost-row">Cost Scaling:</span>
+                `;
+
+                // Show costs for first, middle, and last levels
+                const levelsToShow = [1, Math.ceil(prop.maxLevel / 2), prop.maxLevel];
+                for (const level of levelsToShow) {
+                    const cost = prop.getUpgradeCost();
+                    const value = prop.getValue();
+                    html += `<span class="cost-row">Level ${level}: <span class="highlight">${cost}</span> | Value: ${value.toFixed(2)}</span>`;
+                }
+
+                // Calculate total cost to max
+                let totalCost = 0;
+                for (let i = 1; i <= prop.maxLevel; i++) {
+                    totalCost += prop.getUpgradeCost();
+                }
+                html += `<span class="cost-row"><strong>Total Cost to Max: ${totalCost}</strong></span>`;
+
+                // Calculate impact score
+                const impactScore = calculateImpactScore(prop);
+                html += `<span class="cost-row">Impact Score: ${impactScore.toFixed(2)}</span>`;
+
+                html += '</div>';
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        // Analyze each node
+        let nodesHtml = '';
+        const nodes = tree.getAllNodes();
+        for (const node of nodes) {
+            nodesHtml += addNode(node);
+        }
+        addSection('All Upgrades', nodesHtml);
+
+        // Cost comparison summary
+        const tier1Nodes = nodes.filter(n => n.parentId === 'dot' || n.isRoot);
+        const tier2Nodes = nodes.filter(n => n.parentId && n.parentId !== 'dot');
+
+        let tier1Html = '';
+        for (const node of tier1Nodes) {
+            for (const prop of node.properties) {
+                let totalCost = 0;
+                for (let i = 1; i <= prop.maxLevel; i++) {
+                    totalCost += prop.getUpgradeCost();
+                }
+                tier1Html += `<div class="cost-row">${prop.name}: <span class="highlight">${totalCost}</span> total (avg ${Math.round(totalCost / prop.maxLevel)} per level)</div>`;
+            }
+        }
+        addSection('Tier 1 Upgrades (Basic)', tier1Html);
+
+        let tier2Html = '';
+        for (const node of tier2Nodes) {
+            for (const prop of node.properties) {
+                let totalCost = 0;
+                for (let i = 1; i <= prop.maxLevel; i++) {
+                    totalCost += prop.getUpgradeCost();
+                }
+                tier2Html += `<div class="cost-row">${prop.name}: <span class="highlight">${totalCost}</span> total (avg ${Math.round(totalCost / prop.maxLevel)} per level)</div>`;
+            }
+        }
+        addSection('Tier 2+ Upgrades (Advanced)', tier2Html);
+
+        // Cost-to-power ratio analysis
+        const upgradeRatios = [];
+        for (const node of nodes) {
+            for (const prop of node.properties) {
+                let totalCost = 0;
+                for (let i = 1; i <= prop.maxLevel; i++) {
+                    totalCost += prop.getUpgradeCost();
+                }
+
+                const baseValue = prop.baseValue;
+                const maxValue = baseValue + (prop.maxLevel * prop.valuePerLevel);
+                const powerGain = maxValue - baseValue;
+
+                const ratio = totalCost / (powerGain || 1);
+                upgradeRatios.push({
+                    name: prop.name,
+                    nodeId: node.id,
+                    totalCost,
+                    powerGain,
+                    ratio
+                });
+            }
+        }
+
+        upgradeRatios.sort((a, b) => a.ratio - b.ratio);
+
+        let bestValueHtml = '';
+        upgradeRatios.slice(0, 5).forEach((u, i) => {
+            bestValueHtml += `<div class="cost-row good">${i + 1}. ${u.name}: ${u.ratio.toFixed(2)} cost/power (Cost: ${u.totalCost}, Power: ${u.powerGain.toFixed(2)})</div>`;
+        });
+        addSection('Best Value Upgrades (Lowest Cost/Power Ratio)', bestValueHtml);
+
+        let expensiveHtml = '';
+        upgradeRatios.slice(-5).reverse().forEach((u, i) => {
+            expensiveHtml += `<div class="cost-row warning">${i + 1}. ${u.name}: ${u.ratio.toFixed(2)} cost/power (Cost: ${u.totalCost}, Power: ${u.powerGain.toFixed(2)})</div>`;
+        });
+        addSection('Most Expensive Upgrades (Highest Cost/Power Ratio)', expensiveHtml);
+
+        console.log('Cost scaling analysis complete!');
+    </script>
+</body>
+</html>

@@ -128,9 +128,13 @@ class Magnet {
         this.baseDuration = 0.5;
         
         // Apply upgrades (upgrades contains multipliers directly from upgrade tree)
-        this.strength = this.baseStrength * (upgrades.strength || 1);
-        this.radius = this.baseRadius * ((upgrades.radius^2)/2 || 1);
-        this.duration = this.baseDuration * (upgrades.duration || 1);
+        const radiusMultiplier = type === 'attract' 
+            ? (upgrades.attractRadius || 1) * (upgrades.lawOfAttractionRadius || 1)
+            : (upgrades.repelRadius || 1);
+        
+        this.strength = this.baseStrength * (type === 'attract' ? (upgrades.attractStrength || 1) : (upgrades.repelStrength || 1));
+        this.radius = this.baseRadius * radiusMultiplier;
+        this.duration = this.baseDuration * (type === 'attract' ? (upgrades.attractDuration || 1) : (upgrades.repelDuration || 1));
         
         this.age = 0;
         this.dead = false;

@@ -3,6 +3,108 @@
 // ============================================
 
 /**
+ * Calculate the impact score of an upgrade property
+ * Higher scores indicate more powerful upgrades
+ */
+function calculateImpactScore(prop) {
+    let score = 1;
+    
+    // Base impact from value per level
+    score += prop.valuePerLevel * 10;
+    
+    // Effect type multiplier
+    switch (prop.effectType) {
+        case 'multiply':
+            // Multiplicative effects compound, so they're more powerful
+            score *= 1.5;
+            break;
+        case 'add':
+            // Additive effects are linear
+            score *= 1.0;
+            break;
+        case 'replace':
+            // Replace effects completely change behavior
+            score *= 2.0;
+            break;
+    }
+    
+    // Max level multiplier (more levels = more total impact)
+    score *= Math.pow(prop.maxLevel, 0.5);
+    
+    // Special case: spawn chances and annihilation are very powerful
+    if (prop.id.includes('spawn') || prop.id.includes('annihilation')) {
+        score *= 1.8;
+    }
+    
+    // Special case: limit upgrades are strategically important
+    if (prop.id.includes('Limit')) {
+        score *= 1.3;
+    }
+    
+    // Special case: radius and strength are core mechanics
+    if (prop.id.includes('Radius') || prop.id.includes('Strength')) {
+        score *= 1.2;
+    }
+    
+    return score;
+}
+
+/**
+ * Calculate tier multiplier based on upgrade position in tree
+ */
+function calculateTierMultiplier(nodeId) {
+    // Tier 1: Basic upgrades (direct children of root)
+    const tier1Nodes = ['attract', 'repel', 'dot', 'investment', 'annihalation'];
+    if (tier1Nodes.includes(nodeId)) {
+        return 1.0;
+    }
+    
+    // Tier 2: Advanced upgrades (children of tier 1)
+    const tier2Nodes = ['attractAdvanced', 'repelAdvanced', 'resurrection'];
+    if (tier2Nodes.includes(nodeId)) {
+        return 1.5;
+    }
+    
+    // Tier 3: Special upgrades (deeper in tree)
+    return 2.0;
+}
+
+/**
+ * Dynamic cost function that scales based on upgrade impact
+ * @param {number} level - The level being purchased
+ * @param {object} prop - The property configuration
+ * @param {string} nodeId - The node ID for tier calculation
+ * @returns {number} The cost for this level
+ */
+function createDynamicCostFunction(prop, nodeId) {
+    const impactScore = calculateImpactScore(prop);
+    const tierMultiplier = calculateTierMultiplier(nodeId);
+    
+    // Base cost calculation
+    const baseCost = Math.ceil(impactScore * tierMultiplier);
+    
+    // Return a function that calculates cost for a given level
+    return (level) => {
+        // Level scaling: costs increase with level
+        // Use exponential scaling for powerful upgrades, linear for basic ones
+        let levelMultiplier;
+        
+        if (impactScore > 15) {
+            // Very powerful upgrades: exponential scaling
+            levelMultiplier = Math.pow(1.15, level - 1);
+        } else if (impactScore > 10) {
+            // Moderately powerful upgrades: quadratic scaling
+            levelMultiplier = 1 + (level - 1) * 0.2;
+        } else {
+            // Basic upgrades: linear scaling
+            levelMultiplier = 1 + (level - 1) * 0.1;
+        }
+        
+        return Math.ceil(baseCost * levelMultiplier);
+    };
+}
+
+/**
  * Represents a single upgradeable property within a node
  */
 class NodeProperty {
@@ -14,6 +116,7 @@ class NodeProperty {
         this.level = config.startLevel || 0;
         this.maxLevel = config.maxLevel || 10;
         this.costPerLevel = config.costPerLevel || 1;
+        this.costFunction = config.costFunction || null; // Custom cost calculation function
         
         // Effect configuration
         this.baseValue = config.baseValue || 1;
@@ -42,6 +145,9 @@ class NodeProperty {
      */
     getUpgradeCost() {
         if (this.level >= this.maxLevel) return Infinity;
+        if (this.costFunction) {
+            return this.costFunction(this.level + 1);
+        }
         return this.costPerLevel;
     }
     
@@ -51,8 +157,9 @@ class NodeProperty {
      */
     upgrade() {
         if (this.level >= this.maxLevel) return 0;
+        const cost = this.getUpgradeCost();
         this.level++;
-        return this.costPerLevel;
+        return cost;
     }
     
     /**
@@ -61,8 +168,9 @@ class NodeProperty {
      */
     refund() {
         if (this.level <= 0) return 0;
+        const cost = this.costFunction ? this.costFunction(this.level) : this.costPerLevel;
         this.level--;
-        return this.costPerLevel;
+        return cost;
     }
     
     /**
@@ -301,9 +409,17 @@ class UpgradeTree {
             // Advanced attract upgrades
             treatAttraction: 0,  // Treats attract the dot
             attractTreats: 0,    // Dot attracts treats
+            lawOfAttractionRadius: 1, // Law of Attraction radius multiplier
             // Advanced repel upgrades
             dangerRepulsion: 0,  // Normal dangers repel the dot
-            goldDiggerRepulsion: 0 // Gold Diggers repel the dot
+            goldDiggerRepulsion: 0, // Gold Diggers repel the dot
+            // Resurrection upgrades
+            spawnDotOnTreat: 0,  // Chance to spawn a dot when collecting a treat
+            spawnTreatOnDeath: 0, // Chance to spawn a treat when a dot dies
+            spawnedDotAnnihilation: 0, // Chance for spawned dots to annihilate dangers
+            // Investment upgrades
+            treatSpawnChance: 0, // Increased chance of treat spawning
+            coinGain: 0          // Increased coin gain
         };
         
         // Aggregate from all nodes
@@ -402,7 +518,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.15,
                 maxLevel: 5,
-                costPerLevel: 2,
+                costFunction: createDynamicCostFunction({ id: 'dotSpeed', valuePerLevel: 0.15, maxLevel: 5, effectType: 'multiply' }, 'dot'),
                 effectType: 'multiply'
             }
         ]
@@ -429,7 +545,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.25,
                 maxLevel: 10,
-                costPerLevel: 1,
+                costFunction: createDynamicCostFunction({ id: 'attractStrength', valuePerLevel: 0.25, maxLevel: 10, effectType: 'multiply' }, 'attract'),
                 effectType: 'multiply'
             },
             {
@@ -440,7 +556,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.15,
                 maxLevel: 8,
-                costPerLevel: 1,
+                costFunction: createDynamicCostFunction({ id: 'attractRadius', valuePerLevel: 0.15, maxLevel: 8, effectType: 'multiply' }, 'attract'),
                 effectType: 'multiply'
             },
             {
@@ -451,7 +567,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.2,
                 maxLevel: 8,
-                costPerLevel: 1,
+                costFunction: createDynamicCostFunction({ id: 'attractDuration', valuePerLevel: 0.2, maxLevel: 8, effectType: 'multiply' }, 'attract'),
                 effectType: 'multiply'
             },
             {
@@ -462,7 +578,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 1,
                 maxLevel: 5,
-                costPerLevel: 2,
+                costFunction: createDynamicCostFunction({ id: 'attractLimit', valuePerLevel: 1, maxLevel: 5, effectType: 'add' }, 'attract'),
                 effectType: 'add'
             }
         ]
@@ -489,7 +605,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.25,
                 maxLevel: 10,
-                costPerLevel: 1,
+                costFunction: createDynamicCostFunction({ id: 'repelStrength', valuePerLevel: 0.25, maxLevel: 10, effectType: 'multiply' }, 'repel'),
                 effectType: 'multiply'
             },
             {
@@ -500,7 +616,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.15,
                 maxLevel: 8,
-                costPerLevel: 1,
+                costFunction: createDynamicCostFunction({ id: 'repelRadius', valuePerLevel: 0.15, maxLevel: 8, effectType: 'multiply' }, 'repel'),
                 effectType: 'multiply'
             },
             {
@@ -511,7 +627,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.2,
                 maxLevel: 8,
-                costPerLevel: 1,
+                costFunction: createDynamicCostFunction({ id: 'repelDuration', valuePerLevel: 0.2, maxLevel: 8, effectType: 'multiply' }, 'repel'),
                 effectType: 'multiply'
             },
             {
@@ -522,7 +638,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 1,
                 maxLevel: 5,
-                costPerLevel: 2,
+                costFunction: createDynamicCostFunction({ id: 'repelLimit', valuePerLevel: 1, maxLevel: 5, effectType: 'add' }, 'repel'),
                 effectType: 'add'
             }
         ]
@@ -549,7 +665,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.5,
                 maxLevel: 5,
-                costPerLevel: 6,
+                costFunction: createDynamicCostFunction({ id: 'treatAttraction', valuePerLevel: 0.5, maxLevel: 5, effectType: 'add' }, 'attractAdvanced'),
                 effectType: 'add'
             },
             {
@@ -560,8 +676,19 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.4,
                 maxLevel: 5,
-                costPerLevel: 5,
+                costFunction: createDynamicCostFunction({ id: 'attractTreats', valuePerLevel: 0.4, maxLevel: 5, effectType: 'add' }, 'attractAdvanced'),
                 effectType: 'add'
+            },
+            {
+                id: 'lawOfAttractionRadius',
+                name: 'Universal Pull',
+                description: 'Increases the radius of attraction by 10% per level',
+                icon: '◎',
+                baseValue: 1,
+                valuePerLevel: 0.1,
+                maxLevel: 10,
+                costFunction: createDynamicCostFunction({ id: 'lawOfAttractionRadius', valuePerLevel: 0.1, maxLevel: 10, effectType: 'multiply' }, 'attractAdvanced'),
+                effectType: 'multiply'
             }
         ]
     }
@@ -570,8 +697,8 @@ function createDefaultUpgradeTree() {
     // Advanced Repel node (unlocks at repel level 5)
     const repelAdvanced = {
         id: 'repelAdvanced',
-        name: 'Pulse Engine',
-        description: 'Advanced repulsion techniques for emergency escapes.',
+        name: 'Repulsion Field',
+        description: 'Advanced repulsion techniques for protection.',
         icon: '✦',
         color: '#ff3399',
         parentId: 'repel',
@@ -580,36 +707,14 @@ function createDefaultUpgradeTree() {
         y: 2,
         properties: [
             {
-                id: 'repelStrength',
-                name: 'Engine Overdrive',
-                description: 'Further boost to push force',
-                icon: '⚡',
-                baseValue: 1,
-                valuePerLevel: 0.3,
-                maxLevel: 5,
-                costPerLevel: 2,
-                effectType: 'multiply'
-            },
-            {
-                id: 'repelMulti',
-                name: 'Twin Pulses',
-                description: 'Place two repel magnets at once',
-                icon: '⊕',
-                baseValue: 0,
-                valuePerLevel: 1,
-                maxLevel: 1,
-                costPerLevel: 5,
-                effectType: 'add'
-            },
-            {
                 id: 'dangerRepulsion',
-                name: 'Hazard Buffer',
+                name: 'Repel Dangers',
                 description: 'Normal dangers repel the dot',
                 icon: '⟲',
                 baseValue: 1,
                 valuePerLevel: 0.2,
                 maxLevel: 5,
-                costPerLevel: 3,
+                costFunction: createDynamicCostFunction({ id: 'dangerRepulsion', valuePerLevel: 0.2, maxLevel: 5, effectType: 'add' }, 'repelAdvanced'),
                 effectType: 'add'
             },
             {
@@ -620,7 +725,7 @@ function createDefaultUpgradeTree() {
                 baseValue: 1,
                 valuePerLevel: 0.5,
                 maxLevel: 5,
-                costPerLevel: 10,
+                costFunction: createDynamicCostFunction({ id: 'goldDiggerRepulsion', valuePerLevel: 0.5, maxLevel: 5, effectType: 'add' }, 'repelAdvanced'),
                 effectType: 'add'
             }
         ]
@@ -647,12 +752,99 @@ function createDefaultUpgradeTree() {
                 baseValue: 10,
                 valuePerLevel: -1,
                 maxLevel: 8,
-                costPerLevel: 5,
+                costFunction: createDynamicCostFunction({ id: 'annihalationCost', valuePerLevel: 1, maxLevel: 8, effectType: 'add' }, 'annihalation'),
                 effectType: 'add'
             }
         ]
     }
     tree.addNode(annihalation);
+    
+    // Investment node (unlocks at dot level 1)
+    const investment = {
+        id: 'investment',
+        name: 'Investment',
+        description: 'Invest in your future. Increase spawn rates and profits.',
+        icon: '💰',
+        color: '#ffd700',
+        parentId: 'dot',
+        requiredParentLevel: 1,
+        x: 0,
+        y: 1.5,
+        properties: [
+            {
+                id: 'treatSpawnChance',
+                name: 'Opportunist',
+                description: 'Increases the chance of a treat spawning by 5% per level',
+                icon: '🎲',
+                baseValue: 0,
+                valuePerLevel: 0.2,
+                maxLevel: 10,
+                costFunction: createDynamicCostFunction({ id: 'treatSpawnChance', valuePerLevel: 0.2, maxLevel: 10, effectType: 'add' }, 'investment'),
+                effectType: 'add'
+            },
+            {
+                id: 'coinGain',
+                name: 'Profit',
+                description: 'Increases the coin gain by 1 coin per level',
+                icon: '💎',
+                baseValue: 0,
+                valuePerLevel: 1,
+                maxLevel: 5,
+                costFunction: createDynamicCostFunction({ id: 'coinGain', valuePerLevel: 1, maxLevel: 5, effectType: 'add' }, 'investment'),
+                effectType: 'add'
+            }
+        ]
+    }
+    tree.addNode(investment);
+    
+    // Resurrection node (unlocks at annihalation level 5)
+    const resurrection = {
+        id: 'resurrection',
+        name: 'Resurrection',
+        description: 'Life finds a way. Create new dots and treats from the cycle of existence.',
+        icon: '✿',
+        color: '#ff66cc',
+        parentId: 'annihalation',
+        requiredParentLevel: 5,
+        x: 0,
+        y: 2,
+        properties: [
+            {
+                id: 'spawnDotOnTreat',
+                name: 'Dot Rebirth',
+                description: 'Chance to spawn a dot when collecting a treat',
+                icon: '●',
+                baseValue: 0,
+                valuePerLevel: 0.1,
+                maxLevel: 10,
+                costFunction: createDynamicCostFunction({ id: 'spawnDotOnTreat', valuePerLevel: 0.1, maxLevel: 10, effectType: 'add' }, 'resurrection'),
+                effectType: 'add'
+            },
+            {
+                id: 'spawnTreatOnDeath',
+                name: 'Treat Legacy',
+                description: 'Chance to spawn a treat when a dot dies',
+                icon: '★',
+                baseValue: 0,
+                valuePerLevel: 0.1,
+                maxLevel: 10,
+                costFunction: createDynamicCostFunction({ id: 'spawnTreatOnDeath', valuePerLevel: 0.1, maxLevel: 10, effectType: 'add' }, 'resurrection'),
+                effectType: 'add'
+            },
+            {
+                id: 'spawnedDotAnnihilation',
+                name: 'Sacrificial Strike',
+                description: 'Chance for spawned dots to annihilate dangers',
+                icon: '☠',
+                baseValue: 0,
+                valuePerLevel: 0.1,
+                maxLevel: 10,
+                costFunction: createDynamicCostFunction({ id: 'spawnedDotAnnihilation', valuePerLevel: 0.1, maxLevel: 10, effectType: 'add' }, 'resurrection'),
+                effectType: 'add'
+            }
+        ]
+    }
+    tree.addNode(resurrection);
     
     return tree;
 }

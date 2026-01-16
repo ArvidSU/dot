@@ -3,7 +3,7 @@
 // ============================================
 
 class Dot {
-    constructor(x, y) {
+    constructor(x, y, isAngry = false) {
         this.x = x;
         this.y = y;
         this.vx = 0;
@@ -14,6 +14,7 @@ class Dot {
         this.alive = true;
         this.deathTime = 0;
         this.deathAnimation = 0;
+        this.isAngry = isAngry;
     }
     
     update(dt) {
@@ -60,10 +61,11 @@ class Dot {
             const point = this.trail[i];
             const alpha = Math.max(0, 1 - point.age) * 0.6;
             const size = this.radius * (1 - i / this.trail.length) * 0.8;
+            const trailColor = this.isAngry ? '255, 60, 60' : '255, 255, 255';
             
             ctx.beginPath();
             ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.3})`;
+            ctx.fillStyle = `rgba(${trailColor}, ${alpha * 0.3})`;
             ctx.fill();
         }
         
@@ -72,10 +74,11 @@ class Dot {
             const t = this.deathAnimation;
             const expandRadius = this.radius + t * 100;
             const alpha = 1 - t;
+            const deathColor = this.isAngry ? '255, 60, 60' : '255, 0, 102';
             
             ctx.beginPath();
             ctx.arc(this.x, this.y, expandRadius, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(255, 0, 102, ${alpha})`;
+            ctx.strokeStyle = `rgba(${deathColor}, ${alpha})`;
             ctx.lineWidth = 2 * (1 - t);
             ctx.stroke();
             
@@ -84,7 +87,7 @@ class Dot {
                 const shrink = 1 - t * 2;
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius * shrink, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255, 0, 102, ${shrink})`;
+                ctx.fillStyle = `rgba(${deathColor}, ${shrink})`;
                 ctx.fill();
             }
             return;
@@ -95,9 +98,15 @@ class Dot {
             this.x, this.y, 0,
             this.x, this.y, this.radius * 3
         );
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        if (this.isAngry) {
+            gradient.addColorStop(0, 'rgba(255, 60, 60, 0.5)');
+            gradient.addColorStop(0.5, 'rgba(255, 60, 60, 0.2)');
+            gradient.addColorStop(1, 'rgba(255, 60, 60, 0)');
+        } else {
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+            gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        }
         
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius * 3, 0, Math.PI * 2);
@@ -107,13 +116,13 @@ class Dot {
         // Main dot
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = this.isAngry ? '#ff3333' : '#ffffff';
         ctx.fill();
         
         // Inner highlight
         ctx.beginPath();
         ctx.arc(this.x - 2, this.y - 2, this.radius * 0.4, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.fillStyle = this.isAngry ? 'rgba(255, 100, 100, 0.8)' : 'rgba(255, 255, 255, 0.8)';
         ctx.fill();
     }
 }
@@ -367,13 +376,13 @@ class GoldDigger {
         const pulse = 1 + Math.sin(this.pulsePhase) * 0.15;
         const r = this.radius * pulse;
 
-        // Golden outer glow
+        // Dangerous red outer glow
         const glowGradient = ctx.createRadialGradient(
             this.x, this.y, r * 0.5,
             this.x, this.y, r * 2
         );
-        glowGradient.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
-        glowGradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+        glowGradient.addColorStop(0, 'rgba(255, 60, 60, 0.6)');
+        glowGradient.addColorStop(1, 'rgba(255, 60, 60, 0)');
 
         ctx.beginPath();
         ctx.arc(this.x, this.y, r * 2, 0, Math.PI * 2);
@@ -397,20 +406,20 @@ class GoldDigger {
         ctx.closePath();
 
         const bodyGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-        bodyGradient.addColorStop(0, '#fff8dc');
-        bodyGradient.addColorStop(0.5, '#ffd700');
-        bodyGradient.addColorStop(1, '#daa520');
+        bodyGradient.addColorStop(0, '#ffcccc');
+        bodyGradient.addColorStop(0.5, '#ff4444');
+        bodyGradient.addColorStop(1, '#cc0000');
         ctx.fillStyle = bodyGradient;
         ctx.fill();
 
-        ctx.strokeStyle = '#ffffff';
+        ctx.strokeStyle = '#ff8888';
         ctx.lineWidth = 2;
         ctx.stroke();
 
         // Inner detail
         ctx.beginPath();
         ctx.arc(0, 0, r * 0.4, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
         ctx.stroke();
 
         ctx.restore();

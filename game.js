@@ -306,11 +306,12 @@ class Game {
             if (stats.spawnDotOnTreat > 0) {
                 const chance = stats.spawnDotOnTreat;
                 if (Math.random() < chance) {
-                    // Spawn a new dot at the treat's location
-                    const newDot = new Dot(treat.x, treat.y);
+                    // Check if this should be an angry dot (kamikaze)
+                    const isAngry = stats.kamikaze > 0 && Math.random() < stats.kamikaze;
+                    const newDot = new Dot(treat.x, treat.y, isAngry);
                     this.dots.push(newDot);
                     // Spawn particles to indicate dot creation
-                    this.spawnDotCreationParticles(treat.x, treat.y);
+                    this.spawnDotCreationParticles(treat.x, treat.y, isAngry);
                 }
             }
             
@@ -371,8 +372,9 @@ class Game {
         }
     }
     
-    spawnDotCreationParticles(x, y) {
+    spawnDotCreationParticles(x, y, isAngry = false) {
         const count = 15;
+        const color = isAngry ? '255, 60, 60' : '255, 255, 255';
         for (let i = 0; i < count; i++) {
             const angle = Math.random() * Math.PI * 2;
             const speed = 80 + Math.random() * 80;
@@ -385,7 +387,7 @@ class Game {
                 life: 1,
                 decay: 2 + Math.random(),
                 size: 2 + Math.random() * 3,
-                color: '255, 255, 255'
+                color: color
             });
         }
     }
@@ -459,11 +461,46 @@ class Game {
         const forces = this.physics.calculateMagneticForces(this.dot, this.magnets);
         this.dot.applyForce(forces.fx * dt, forces.fy * dt);
         
-        // Apply magnetic forces to additional dots
+        // Apply magnetic forces and seek behavior to additional dots
         for (const dot of this.dots) {
             if (!dot.alive) continue;
+            
+            // Apply magnetic forces to all dots
             const forces = this.physics.calculateMagneticForces(dot, this.magnets);
             dot.applyForce(forces.fx * dt, forces.fy * dt);
+            
+            // Angry dots actively seek out dangers
+            if (dot.isAngry && this.dangers.length > 0) {
+                // Find closest danger
+                let closestDanger = null;
+                let closestDistance = Infinity;
+                
+                for (const danger of this.dangers) {
+                    const dx = danger.x - dot.x;
+                    const dy = danger.y - dot.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        closestDanger = danger;
+                    }
+                }
+                
+                if (closestDanger) {
+                    // Move towards the closest danger
+                    const dx = closestDanger.x - dot.x;
+                    const dy = closestDanger.y - dot.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance > 1) {
+                        const speed = 300; // Angry dots are fast
+                        const nx = dx / distance;
+                        const ny = dy / distance;
+                        
+                        dot.applyForce(nx * speed * dt, ny * speed * dt);
+                    }
+                }
+            }
         }
         
         // Get stats for treat attraction effects
@@ -716,24 +753,32 @@ class Game {
             if (!dot.alive) continue;
             const dangerHit = this.physics.checkDangerCollisions(dot, this.dangers);
             if (dangerHit) {
-                // Check for spawned dot annihilation chance
-                const stats = this.getStats();
-                if (stats.spawnedDotAnnihilation > 0) {
-                    const chance = stats.spawnedDotAnnihilation;
-                    if (Math.random() < chance) {
-                        // Annihilate the danger!
-                        this.killDanger(dangerHit);
-                        this.handleDotDeath(dot);
-                        dot.die();
+                // Angry dots have 100% annihilation chance
+                if (dot.isAngry) {
+                    // Annihilate the danger!
+                    this.killDanger(dangerHit);
+                    this.handleDotDeath(dot);
+                    dot.die();
+                } else {
+                    // Check for spawned dot annihilation chance
+                    const stats = this.getStats();
+                    if (stats.spawnedDotAnnihilation > 0) {
+                        const chance = stats.spawnedDotAnnihilation;
+                        if (Math.random() < chance) {
+                            // Annihilate the danger!
+                            this.killDanger(dangerHit);
+                            this.handleDotDeath(dot);
+                            dot.die();
+                        } else {
+                            // Dot dies normally
+                            this.handleDotDeath(dot);
+                            dot.die();
+                        }
                     } else {
                         // Dot dies normally
                         this.handleDotDeath(dot);
                         dot.die();
                     }
-                } else {
-                    // Dot dies normally
-                    this.handleDotDeath(dot);
-                    dot.die();
                 }
             }
         }

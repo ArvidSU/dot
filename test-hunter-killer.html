@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hunter Killer Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #0f0f18;
+            color: white;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: rgba(0, 255, 0, 0.2);
+            color: #00ff00;
+        }
+        .info {
+            background-color: rgba(0, 200, 255, 0.2);
+            color: #00ccff;
+        }
+        button {
+            background-color: #ff66cc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #ff44aa;
+        }
+        canvas {
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Hunter Killer Upgrade Test</h1>
+        
+        <div class="test-section">
+            <h2>Upgrade Tree Structure</h2>
+            <div id="upgrade-tree-result" class="test-result info">Loading...</div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Stats Calculation</h2>
+            <div id="stats-result" class="test-result info">Loading...</div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Entity Creation</h2>
+            <div id="entity-result" class="test-result info">Loading...</div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Manual Testing</h2>
+            <p>Open <a href="index.html" style="color: #ff66cc;">index.html</a> in your browser to test the game with the new upgrade.</p>
+        </div>
+    </div>
+
+    <script src="upgrades.js"></script>
+    <script src="entities.js"></script>
+    <script>
+        // Test 1: Verify upgrade tree structure
+        function testUpgradeTree() {
+            const tree = createDefaultUpgradeTree();
+            const resurrectionNode = tree.getNode('resurrection');
+            const hunterKillerNode = tree.getNode('hunterKiller');
+            
+            let result = '';
+            
+            if (resurrectionNode) {
+                result += '✅ Resurrection node exists<br>';
+            } else {
+                result += '❌ Resurrection node not found<br>';
+            }
+            
+            if (hunterKillerNode) {
+                result += '✅ Hunter Killer node exists<br>';
+                if (hunterKillerNode.parentId === 'resurrection') {
+                    result += '✅ Hunter Killer is a child of Resurrection<br>';
+                } else {
+                    result += `❌ Hunter Killer parent is incorrect (${hunterKillerNode.parentId})<br>`;
+                }
+                
+                const sacrificialStrike = hunterKillerNode.getProperty('spawnedDotAnnihilation');
+                const kamikaze = hunterKillerNode.getProperty('kamikaze');
+                
+                if (sacrificialStrike) {
+                    result += '✅ Sacrificial Strike property exists in Hunter Killer<br>';
+                } else {
+                    result += '❌ Sacrificial Strike property not found in Hunter Killer<br>';
+                }
+                
+                if (kamikaze) {
+                    result += '✅ Kamikaze property exists in Hunter Killer<br>';
+                    result += `   - Value per level: ${kamikaze.valuePerLevel}<br>`;
+                    result += `   - Max level: ${kamikaze.maxLevel}<br>`;
+                } else {
+                    result += '❌ Kamikaze property not found in Hunter Killer<br>';
+                }
+            } else {
+                result += '❌ Hunter Killer node not found<br>';
+            }
+            
+            document.getElementById('upgrade-tree-result').innerHTML = result;
+        }
+        
+        // Test 2: Verify stats calculation
+        function testStats() {
+            const tree = createDefaultUpgradeTree();
+            
+            // Upgrade Hunter Killer properties to level 10 to test
+            tree.getNode('hunterKiller').getProperty('spawnedDotAnnihilation').level = 10;
+            tree.getNode('hunterKiller').getProperty('kamikaze').level = 10;
+            
+            const stats = tree.getStats();
+            
+            let result = '';
+            result += `✅ Stats object created<br>`;
+            result += `   - spawnedDotAnnihilation: ${stats.spawnedDotAnnihilation}<br>`;
+            result += `   - kamikaze: ${stats.kamikaze}<br>`;
+            
+            document.getElementById('stats-result').innerHTML = result;
+        }
+        
+        // Test 3: Verify entity creation
+        function testEntities() {
+            const normalDot = new Dot(100, 100);
+            const angryDot = new Dot(200, 200, true);
+            
+            let result = '';
+            result += '✅ Normal dot created<br>';
+            result += `   - isAngry: ${normalDot.isAngry}<br>`;
+            result += '✅ Angry dot created<br>';
+            result += `   - isAngry: ${angryDot.isAngry}<br>`;
+            
+            document.getElementById('entity-result').innerHTML = result;
+        }
+        
+        // Run all tests
+        testUpgradeTree();
+        testStats();
+        testEntities();
+    </script>
+</body>
+</html>

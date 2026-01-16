@@ -417,6 +417,7 @@ class UpgradeTree {
             spawnDotOnTreat: 0,  // Chance to spawn a dot when collecting a treat
             spawnTreatOnDeath: 0, // Chance to spawn a treat when a dot dies
             spawnedDotAnnihilation: 0, // Chance for spawned dots to annihilate dangers
+            kamikaze: 0,         // Chance to spawn angry dot that seeks and annihilates dangers
             // Investment upgrades
             treatSpawnChance: 0, // Increased chance of treat spawning
             coinGain: 0          // Increased coin gain
@@ -830,7 +831,23 @@ function createDefaultUpgradeTree() {
                 maxLevel: 10,
                 costFunction: createDynamicCostFunction({ id: 'spawnTreatOnDeath', valuePerLevel: 0.1, maxLevel: 10, effectType: 'add' }, 'resurrection'),
                 effectType: 'add'
-            },
+            }
+        ]
+    }
+    tree.addNode(resurrection);
+    
+    // Hunter Killer node (unlocks at resurrection level 5)
+    const hunterKiller = {
+        id: 'hunterKiller',
+        name: 'Hunter Killer',
+        description: 'Angry dots seek out and annihilate dangers with extreme prejudice.',
+        icon: '⚔',
+        color: '#ff4444',
+        parentId: 'resurrection',
+        requiredParentLevel: 5,
+        x: 0,
+        y: 3,
+        properties: [
             {
                 id: 'spawnedDotAnnihilation',
                 name: 'Sacrificial Strike',
@@ -839,12 +856,23 @@ function createDefaultUpgradeTree() {
                 baseValue: 0,
                 valuePerLevel: 0.1,
                 maxLevel: 10,
-                costFunction: createDynamicCostFunction({ id: 'spawnedDotAnnihilation', valuePerLevel: 0.1, maxLevel: 10, effectType: 'add' }, 'resurrection'),
+                costFunction: createDynamicCostFunction({ id: 'spawnedDotAnnihilation', valuePerLevel: 0.1, maxLevel: 10, effectType: 'add' }, 'hunterKiller'),
+                effectType: 'add'
+            },
+            {
+                id: 'kamikaze',
+                name: 'Kamikaze',
+                description: 'Chance to spawn an angry dot that actively seeks out dangers to annihilate with 100% effectiveness',
+                icon: '💥',
+                baseValue: 0,
+                valuePerLevel: 0.05,
+                maxLevel: 10,
+                costFunction: createDynamicCostFunction({ id: 'kamikaze', valuePerLevel: 0.05, maxLevel: 10, effectType: 'add' }, 'hunterKiller'),
                 effectType: 'add'
             }
         ]
     }
-    tree.addNode(resurrection);
+    tree.addNode(hunterKiller);
     
     return tree;
 }

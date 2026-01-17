@@ -7,6 +7,8 @@ class Game {
         this.canvas = document.getElementById('game');
         this.ctx = this.canvas.getContext('2d');
         this.physics = new Physics();
+        this.particleSystem = new ParticleSystem();
+        this.forceSystem = new ForceSystem();
         
         // Game state
         this.state = 'mainMenu'; // 'playing', 'paused', 'gameOver', 'mainMenu'
@@ -33,7 +35,6 @@ class Game {
         this.magnets = [];
         this.dangers = [];
         this.treats = [];
-        this.particles = [];
         
         // Spawn timers
         this.dangerSpawnTimer = 0;
@@ -46,6 +47,21 @@ class Game {
         
         // Timing
         this.lastTime = 0;
+        
+        // Magnet control state
+        this.activeMagnets = {
+            attract: null,
+            repel: null
+        };
+        this.mousePositions = {
+            attract: null,
+            repel: null
+        };
+        this.magnetCooldown = {
+            attract: 0,
+            repel: 0
+        };
+        this.magnetCooldownTime = 0.1; // 100ms cooldown between magnet placements
         
         // Initialize
         this.resize();
@@ -65,7 +81,7 @@ class Game {
     setupEventListeners() {
         window.addEventListener('resize', () => this.resize());
         
-        // Mouse click for magnet placement
+        // Mouse down to start magnet activation
         this.canvas.addEventListener('mousedown', (e) => {
             if (this.state !== 'playing') return;
             
@@ -76,7 +92,44 @@ class Game {
             
             // Left click = attract, Right click = repel
             const type = e.button === 2 ? 'repel' : 'attract';
-            this.placeMagnet(x, y, type);
+            this.mousePositions[type] = { x, y };
+        });
+        
+        // Mouse up to stop magnet activation
+        this.canvas.addEventListener('mouseup', (e) => {
+            if (this.state !== 'playing') return;
+            
+            e.preventDefault();
+            const type = e.button === 2 ? 'repel' : 'attract';
+            this.mousePositions[type] = null;
+            this.activeMagnets[type] = null;
+        });
+        
+        // Mouse leave to stop magnet activation
+        this.canvas.addEventListener('mouseleave', () => {
+            if (this.state !== 'playing') return;
+            
+            this.mousePositions.attract = null;
+            this.mousePositions.repel = null;
+            this.activeMagnets.attract = null;
+            this.activeMagnets.repel = null;
+        });
+        
+        // Mouse move to update magnet position
+        this.canvas.addEventListener('mousemove', (e) => {
+            if (this.state !== 'playing') return;
+            
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            // Update active magnet positions
+            if (this.mousePositions.attract) {
+                this.mousePositions.attract = { x, y };
+            }
+            if (this.mousePositions.repel) {
+                this.mousePositions.repel = { x, y };
+            }
         });
         
         // Prevent context menu on right click
@@ -163,6 +216,20 @@ class Game {
         this.dangerSpawnTimer = 3; // First danger spawns after 3 seconds
         this.treatSpawnTimer = 2; // First treat spawns after 2 seconds
         
+        // Reset magnet control state
+        this.activeMagnets = {
+            attract: null,
+            repel: null
+        };
+        this.mousePositions = {
+            attract: null,
+            repel: null
+        };
+        this.magnetCooldown = {
+            attract: 0,
+            repel: 0
+        };
+        
         // Update UI
         this.updateUI();
         
@@ -238,24 +305,7 @@ class Game {
     }
     
     spawnMagnetParticles(x, y, type) {
-        const color = type === 'attract' ? '0, 212, 255' : '255, 0, 102';
-        const count = 12;
-        
-        for (let i = 0; i < count; i++) {
-            const angle = (i / count) * Math.PI * 2;
-            const speed = 50 + Math.random() * 50;
-            
-            this.particles.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed * (type === 'attract' ? -1 : 1),
-                vy: Math.sin(angle) * speed * (type === 'attract' ? -1 : 1),
-                life: 1,
-                decay: 2 + Math.random(),
-                size: 3 + Math.random() * 3,
-                color
-            });
-        }
+        this.particleSystem.spawnMagnetParticles(x, y, type);
     }
     
     spawnDanger() {
@@ -335,61 +385,15 @@ class Game {
     }
     
     spawnExplosionParticles(x, y, color) {
-        const count = 30;
-        for (let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 150 + Math.random() * 200;
-            
-            this.particles.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                life: 1,
-                decay: 1 + Math.random() * 2,
-                size: 3 + Math.random() * 5,
-                color
-            });
-        }
+        this.particleSystem.spawnExplosionParticles(x, y, color);
     }
     
     spawnCollectParticles(x, y) {
-        const count = 20;
-        for (let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 100 + Math.random() * 100;
-            
-            this.particles.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                life: 1,
-                decay: 1.5 + Math.random(),
-                size: 2 + Math.random() * 4,
-                color: '255, 215, 0'
-            });
-        }
+        this.particleSystem.spawnCollectParticles(x, y);
     }
     
     spawnDotCreationParticles(x, y, isAngry = false) {
-        const count = 15;
-        const color = isAngry ? '255, 60, 60' : '255, 255, 255';
-        for (let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 80 + Math.random() * 80;
-            
-            this.particles.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                life: 1,
-                decay: 2 + Math.random(),
-                size: 2 + Math.random() * 3,
-                color: color
-            });
-        }
+        this.particleSystem.spawnDotCreationParticles(x, y, isAngry);
     }
     
     handleDotDeath(dot) {
@@ -442,6 +446,21 @@ class Game {
         
         this.gameTime += dt;
         
+        // Handle continuous magnet placement while mouse button is held
+        for (const type of ['attract', 'repel']) {
+            if (this.mousePositions[type]) {
+                // Decrease cooldown
+                this.magnetCooldown[type] -= dt;
+                
+                // Place magnet if cooldown is ready
+                if (this.magnetCooldown[type] <= 0) {
+                    const { x, y } = this.mousePositions[type];
+                    this.placeMagnet(x, y, type);
+                    this.magnetCooldown[type] = this.magnetCooldownTime;
+                }
+            }
+        }
+        
         // Update spawn timers
         this.dangerSpawnTimer -= dt;
         this.treatSpawnTimer -= dt;
@@ -457,213 +476,38 @@ class Game {
             this.treatSpawnTimer = this.treatSpawnInterval;
         }
         
-        // Apply magnetic forces to main dot
-        const forces = this.physics.calculateMagneticForces(this.dot, this.magnets);
-        this.dot.applyForce(forces.fx * dt, forces.fy * dt);
-        
-        // Apply magnetic forces and seek behavior to additional dots
-        for (const dot of this.dots) {
-            if (!dot.alive) continue;
-            
-            // Apply magnetic forces to all dots
-            const forces = this.physics.calculateMagneticForces(dot, this.magnets);
-            dot.applyForce(forces.fx * dt, forces.fy * dt);
-            
-            // Angry dots actively seek out dangers
-            if (dot.isAngry && this.dangers.length > 0) {
-                // Find closest danger
-                let closestDanger = null;
-                let closestDistance = Infinity;
-                
-                for (const danger of this.dangers) {
-                    const dx = danger.x - dot.x;
-                    const dy = danger.y - dot.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    
-                    if (distance < closestDistance) {
-                        closestDistance = distance;
-                        closestDanger = danger;
-                    }
-                }
-                
-                if (closestDanger) {
-                    // Move towards the closest danger
-                    const dx = closestDanger.x - dot.x;
-                    const dy = closestDanger.y - dot.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    
-                    if (distance > 1) {
-                        const speed = 300; // Angry dots are fast
-                        const nx = dx / distance;
-                        const ny = dy / distance;
-                        
-                        dot.applyForce(nx * speed * dt, ny * speed * dt);
-                    }
-                }
-            }
-        }
-        
-        // Get stats for treat attraction effects
+        // Get stats for force effects
         const stats = this.getStats();
         
-        // Apply treat attraction forces (treats pull the dot)
-        if (stats.treatAttraction > 0) {
-            const treatAttractionStrength = 8000 * stats.treatAttraction;
-            const treatAttractionRadius = 300;
-            
-            // Apply to main dot
-            for (const treat of this.treats) {
-                if (treat.collected) continue;
-                
-                const dx = treat.x - this.dot.x;
-                const dy = treat.y - this.dot.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance > treatAttractionRadius || distance < 1) continue;
-                
-                const radiusFactor = 1 - (distance / treatAttractionRadius);
-                const forceMagnitude = (treatAttractionStrength * radiusFactor) / Math.max(distance, 20);
-                
-                const nx = dx / distance;
-                const ny = dy / distance;
-                
-                this.dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
-            }
-            
-            // Apply to additional dots
-            for (const dot of this.dots) {
-                if (!dot.alive) continue;
-                for (const treat of this.treats) {
-                    if (treat.collected) continue;
-                    
-                    const dx = treat.x - dot.x;
-                    const dy = treat.y - dot.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    
-                    if (distance > treatAttractionRadius || distance < 1) continue;
-                    
-                    const radiusFactor = 1 - (distance / treatAttractionRadius);
-                    const forceMagnitude = (treatAttractionStrength * radiusFactor) / Math.max(distance, 20);
-                    
-                    const nx = dx / distance;
-                    const ny = dy / distance;
-                    
-                    dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
-                }
-            }
-        }
+        // Apply forces to main dot
+        this.forceSystem.applyAllForces(
+            this.dot,
+            this.magnets,
+            this.treats,
+            this.dangers,
+            stats,
+            dt,
+            this.physics
+        );
         
-        // Make treats move towards dots (dots attract treats)
-        if (stats.attractTreats > 0) {
-            const treatAttractionStrength = 6000 * stats.attractTreats;
-            const treatAttractionRadius = 250;
-            
-            // Apply to main dot
-            for (const treat of this.treats) {
-                if (treat.collected) continue;
-                
-                const dx = this.dot.x - treat.x;
-                const dy = this.dot.y - treat.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance > treatAttractionRadius || distance < 20) continue;
-                
-                // Use similar force calculation as magnets for smooth movement
-                const radiusFactor = 1 - (distance / treatAttractionRadius);
-                const effectiveDistance = Math.max(distance, 20);
-                const forceMagnitude = (treatAttractionStrength * radiusFactor) / effectiveDistance;
-                
-                const nx = dx / distance;
-                const ny = dy / distance;
-                
-                // Apply force to treat (velocity-based, not direct position)
-                treat.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
-            }
-            
-            // Apply to additional dots
-            for (const dot of this.dots) {
-                if (!dot.alive) continue;
-                for (const treat of this.treats) {
-                    if (treat.collected) continue;
-                    
-                    const dx = dot.x - treat.x;
-                    const dy = dot.y - treat.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    
-                    if (distance > treatAttractionRadius || distance < 20) continue;
-                    
-                    // Use similar force calculation as magnets for smooth movement
-                    const radiusFactor = 1 - (distance / treatAttractionRadius);
-                    const effectiveDistance = Math.max(distance, 20);
-                    const forceMagnitude = (treatAttractionStrength * radiusFactor) / effectiveDistance;
-                    
-                    const nx = dx / distance;
-                    const ny = dy / distance;
-                    
-                    // Apply force to treat (velocity-based, not direct position)
-                    treat.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
-                }
-            }
-        }
-
-        // Apply danger repulsion forces (dangers push the dot away)
-        if (stats.dangerRepulsion > 0 || stats.goldDiggerRepulsion > 0) {
-            const dangerRepulsionStrength = 4000 * stats.dangerRepulsion;
-            const dangerRepulsionRadius = 250;
-            const goldDiggerRepulsionStrength = 12000 * stats.goldDiggerRepulsion;
-            const goldDiggerRepulsionRadius = 300;
-
-            // Apply to main dot
-            for (const danger of this.dangers) {
-                const isGoldDigger = danger.isGoldDigger;
-                const strength = isGoldDigger ? goldDiggerRepulsionStrength : dangerRepulsionStrength;
-                const radius = isGoldDigger ? goldDiggerRepulsionRadius : dangerRepulsionRadius;
-
-                if (strength <= 0) continue;
-
-                const dx = this.dot.x - danger.x;
-                const dy = this.dot.y - danger.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                if (distance > radius || distance < 1) continue;
-
-                const radiusFactor = 1 - (distance / radius);
-                const effectiveDistance = Math.max(distance, 20);
-                const forceMagnitude = (strength * radiusFactor) / effectiveDistance;
-
-                const nx = dx / distance;
-                const ny = dy / distance;
-
-                this.dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
-            }
-            
-            // Apply to additional dots
-            for (const dot of this.dots) {
-                if (!dot.alive) continue;
-                for (const danger of this.dangers) {
-                    const isGoldDigger = danger.isGoldDigger;
-                    const strength = isGoldDigger ? goldDiggerRepulsionStrength : dangerRepulsionStrength;
-                    const radius = isGoldDigger ? goldDiggerRepulsionRadius : dangerRepulsionRadius;
-
-                    if (strength <= 0) continue;
-
-                    const dx = dot.x - danger.x;
-                    const dy = dot.y - danger.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-
-                    if (distance > radius || distance < 1) continue;
-
-                    const radiusFactor = 1 - (distance / radius);
-                    const effectiveDistance = Math.max(distance, 20);
-                    const forceMagnitude = (strength * radiusFactor) / effectiveDistance;
-
-                    const nx = dx / distance;
-                    const ny = dy / distance;
-
-                    dot.applyForce(nx * forceMagnitude * dt, ny * forceMagnitude * dt);
-                }
-            }
-        }
+        // Apply forces to additional dots
+        this.forceSystem.applyForcesToAllDots(
+            this.dots,
+            this.magnets,
+            this.treats,
+            this.dangers,
+            stats,
+            dt,
+            this.physics
+        );
+        
+        // Apply forces from dots to treats
+        this.forceSystem.applyForcesToTreats(
+            this.treats,
+            [this.dot, ...this.dots],
+            stats,
+            dt
+        );
         
         // Update main dot
         this.dot.update(dt);
@@ -809,18 +653,7 @@ class Game {
     }
     
     updateParticles(dt) {
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
-            p.life -= p.decay * dt;
-            p.vx *= 0.98;
-            p.vy *= 0.98;
-            
-            if (p.life <= 0) {
-                this.particles.splice(i, 1);
-            }
-        }
+        this.particleSystem.update(dt);
     }
     
     updateBackgroundParticles(dt) {
@@ -885,33 +718,40 @@ class Game {
     renderBackground() {
         const ctx = this.ctx;
         
-        // Gradient background
+        // Gradient background with smooth transition
         const gradient = ctx.createRadialGradient(
             this.canvas.width / 2, this.canvas.height / 2, 0,
-            this.canvas.width / 2, this.canvas.height / 2, Math.max(this.canvas.width, this.canvas.height) * 0.7
+            this.canvas.width / 2, this.canvas.height / 2, Math.max(this.canvas.width, this.canvas.height) * 0.8
         );
         gradient.addColorStop(0, '#0f0f18');
+        gradient.addColorStop(0.5, '#1a1a2e');
         gradient.addColorStop(1, '#0a0a0f');
         
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Subtle grid pattern
+        // Subtle grid pattern with smooth fading edges
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
         ctx.lineWidth = 1;
         const gridSize = 50;
         
-        for (let x = 0; x < this.canvas.width; x += gridSize) {
+        // Only render grid lines that are visible
+        const visibleGridWidth = Math.ceil(this.canvas.width / gridSize) + 1;
+        const visibleGridHeight = Math.ceil(this.canvas.height / gridSize) + 1;
+        
+        for (let x = 0; x < visibleGridWidth; x++) {
+            const gridX = x * gridSize;
             ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, this.canvas.height);
+            ctx.moveTo(gridX, 0);
+            ctx.lineTo(gridX, this.canvas.height);
             ctx.stroke();
         }
         
-        for (let y = 0; y < this.canvas.height; y += gridSize) {
+        for (let y = 0; y < visibleGridHeight; y++) {
+            const gridY = y * gridSize;
             ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(this.canvas.width, y);
+            ctx.moveTo(0, gridY);
+            ctx.lineTo(this.canvas.width, gridY);
             ctx.stroke();
         }
     }
@@ -928,14 +768,7 @@ class Game {
     }
     
     renderParticles() {
-        const ctx = this.ctx;
-        
-        for (const p of this.particles) {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(${p.color}, ${p.life})`;
-            ctx.fill();
-        }
+        this.particleSystem.render(this.ctx);
     }
     
     loop(time) {

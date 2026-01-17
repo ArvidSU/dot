@@ -654,7 +654,7 @@ function createDefaultUpgradeTree() {
         icon: '✧',
         color: '#00ffcc',
         parentId: 'attract',
-        requiredParentLevel: Math.floor(attract.properties.map(p => p.maxLevel).reduce((a, b) => a + b, 0)*0.75),
+        requiredParentLevel: Math.floor(5 + 8 + 8 + 5 * 0.75),
         x: -2,
         y: 2,
         properties: [
@@ -875,4 +875,17 @@ function createDefaultUpgradeTree() {
     tree.addNode(hunterKiller);
     
     return tree;
+}
+
+// Module exports for Node.js
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        calculateImpactScore,
+        calculateTierMultiplier,
+        createDynamicCostFunction,
+        NodeProperty,
+        UpgradeNode,
+        UpgradeTree,
+        createDefaultUpgradeTree
+    };
 }

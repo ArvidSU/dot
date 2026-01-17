@@ -163,3 +163,8 @@ class Physics {
         };
     }
 }
+
+// Module exports for Node.js
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = Physics;
+}

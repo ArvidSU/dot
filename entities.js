@@ -31,15 +31,15 @@ class Dot {
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         
-        // Update trail
+        // Update trail with smooth interpolation
         this.trail.unshift({ x: this.x, y: this.y, age: 0 });
         if (this.trail.length > this.maxTrailLength) {
             this.trail.pop();
         }
         
-        // Age trail particles
+        // Age trail particles with smooth fade
         for (let i = 0; i < this.trail.length; i++) {
-            this.trail[i].age += dt * 3;
+            this.trail[i].age += dt * 2; // Slower aging for smoother trail
         }
     }
     
@@ -56,17 +56,39 @@ class Dot {
     }
     
     render(ctx) {
-        // Draw trail
-        for (let i = this.trail.length - 1; i >= 0; i--) {
-            const point = this.trail[i];
-            const alpha = Math.max(0, 1 - point.age) * 0.6;
-            const size = this.radius * (1 - i / this.trail.length) * 0.8;
+        // Draw smooth trail with interpolation
+        if (this.trail.length > 1) {
+            // Create gradient for trail
             const trailColor = this.isAngry ? '255, 60, 60' : '255, 255, 255';
             
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(${trailColor}, ${alpha * 0.3})`;
-            ctx.fill();
+            // Draw trail as connected lines with fading width and alpha
+            for (let i = 0; i < this.trail.length - 1; i++) {
+                const point = this.trail[i];
+                const nextPoint = this.trail[i + 1];
+                const progress = i / this.trail.length;
+                const alpha = Math.max(0, 1 - point.age) * 0.6 * (1 - progress);
+                const lineWidth = (this.radius * 0.8) * (1 - progress);
+                
+                ctx.beginPath();
+                ctx.moveTo(point.x, point.y);
+                ctx.lineTo(nextPoint.x, nextPoint.y);
+                ctx.strokeStyle = `rgba(${trailColor}, ${alpha * 0.3})`;
+                ctx.lineWidth = lineWidth;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
+            
+            // Draw individual trail points
+            for (let i = this.trail.length - 1; i >= 0; i--) {
+                const point = this.trail[i];
+                const alpha = Math.max(0, 1 - point.age) * 0.6;
+                const size = this.radius * (1 - i / this.trail.length) * 0.8;
+                
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${trailColor}, ${alpha * 0.3})`;
+                ctx.fill();
+            }
         }
         
         if (!this.alive) {
@@ -154,8 +176,8 @@ class Magnet {
     spawnRipple() {
         this.ripples.push({
             radius: 0,
-            alpha: 1,
-            speed: this.type === 'attract' ? -1 : 1,
+            alpha: 0.6,
+            age: 0,
             baseRadius: this.radius
         });
     }
@@ -167,24 +189,36 @@ class Magnet {
             this.dead = true;
         }
         
-        // Spawn ripples periodically
-        if (Math.floor(this.age * 2) > Math.floor((this.age - dt) * 2)) {
+        // Spawn ripples continuously for smooth effect
+        const rippleSpawnRate = 0.15; // Spawn new ripple every 150ms
+        if (this.lastRippleSpawn === undefined) {
+            this.lastRippleSpawn = 0;
+        }
+        if (this.age - this.lastRippleSpawn >= rippleSpawnRate) {
             this.spawnRipple();
+            this.lastRippleSpawn = this.age;
         }
         
-        // Update ripples
+        // Update ripples with smooth easing
         for (let i = this.ripples.length - 1; i >= 0; i--) {
             const ripple = this.ripples[i];
-            if (this.type === 'attract') {
-                // Ripples move inward
-                ripple.radius = Math.max(0, ripple.baseRadius * (1 - (ripple.alpha)));
-            } else {
-                // Ripples move outward
-                ripple.radius = ripple.baseRadius * (1 - ripple.alpha);
-            }
-            ripple.alpha -= dt * 0.8;
+            ripple.age += dt;
             
-            if (ripple.alpha <= 0) {
+            // Smooth easing for ripple animation (ease out cubic)
+            const progress = Math.min(1, ripple.age / 1.5); // Complete ripple in 1.5 seconds
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+            
+            if (this.type === 'attract') {
+                // Ripples move inward with smooth easing
+                ripple.radius = ripple.baseRadius * (1 - easeProgress);
+                ripple.alpha = 0.6 * (1 - easeProgress);
+            } else {
+                // Ripples move outward with smooth easing
+                ripple.radius = ripple.baseRadius * easeProgress;
+                ripple.alpha = 0.6 * (1 - easeProgress);
+            }
+            
+            if (ripple.alpha <= 0.01) {
                 this.ripples.splice(i, 1);
             }
         }
@@ -199,25 +233,25 @@ class Magnet {
         const color = this.type === 'attract' ? '0, 212, 255' : '255, 0, 102';
         const baseAlpha = life * 0.8;
         
-        // Draw effect radius (subtle)
+        // Draw effect radius (subtle) with smooth fading
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius * life, 0, Math.PI * 2);
         ctx.strokeStyle = `rgba(${color}, ${baseAlpha * 0.1})`;
         ctx.lineWidth = 1;
         ctx.stroke();
         
-        // Draw ripples
+        // Draw ripples with smooth line width variation
         for (const ripple of this.ripples) {
             if (ripple.alpha <= 0) continue;
             
             ctx.beginPath();
             ctx.arc(this.x, this.y, ripple.radius * life, 0, Math.PI * 2);
             ctx.strokeStyle = `rgba(${color}, ${ripple.alpha * baseAlpha * 0.5})`;
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2 + Math.sin(ripple.age * 3) * 0.5; // Subtle pulsing effect
             ctx.stroke();
         }
         
-        // Center glow
+        // Center glow with smooth fading
         const glowGradient = ctx.createRadialGradient(
             this.x, this.y, 0,
             this.x, this.y, 30 * life
@@ -231,9 +265,10 @@ class Magnet {
         ctx.fillStyle = glowGradient;
         ctx.fill();
         
-        // Center dot
+        // Center dot with smooth pulsing
+        const pulse = 1 + Math.sin(this.age * 4) * 0.1;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, 4 * life, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, 4 * life * pulse, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${color}, ${baseAlpha})`;
         ctx.fill();
     }
@@ -564,4 +599,15 @@ class Treat {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
         ctx.fill();
     }
+}
+
+// Module exports for Node.js
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        Dot,
+        Magnet,
+        Danger,
+        GoldDigger,
+        Treat
+    };
 }

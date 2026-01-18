@@ -2,6 +2,38 @@
 // UPGRADE UI - Tree Visualization & Modal
 // ============================================
 
+// Layout configuration for radial fan layout supporting 0-6 children
+const LAYOUT_CONFIG = {
+    // Base spacing between tiers
+    tierSpacing: 130,
+    
+    // Radial spread angles by child count (in degrees, relative to vertical down)
+    // Angles are measured from vertical (90° = straight down)
+    spreadAngles: {
+        1: { start: 90, end: 90 },      // Straight down
+        2: { start: 60, end: 120 },     // 60° spread
+        3: { start: 45, end: 135 },     // 90° spread
+        4: { start: 30, end: 150 },     // 120° spread
+        5: { start: 20, end: 160 },     // 140° spread
+        6: { start: 15, end: 165 }      // 150° spread
+    },
+    
+    // Distance from parent (scales with child count)
+    baseRadius: 130,
+    radiusScale: {
+        1: 1.0,
+        2: 1.0,
+        3: 1.1,
+        4: 1.15,
+        5: 1.25,
+        6: 1.35
+    },
+    
+    // Node sizing
+    nodeSize: 50,
+    minNodeSpacing: 30
+};
+
 class UpgradeUI {
     constructor(tree, onClose) {
         this.tree = tree;
@@ -11,14 +43,19 @@ class UpgradeUI {
         this.modalVisible = false;
         
         // Layout settings
-        this.nodeSize = 60;
-        this.nodeSpacing = 140;
+        this.nodeSize = LAYOUT_CONFIG.nodeSize;
         this.centerX = 0;
         this.centerY = 0;
+        
+        // Calculated node positions (screen coordinates)
+        this.nodePositions = new Map();
         
         // Animation
         this.glowPhase = 0;
         this.hoverNode = null;
+        
+        // Energy flow particles
+        this.energyParticles = [];
         
         // Create DOM elements
         this.createElements();
@@ -211,13 +248,13 @@ class UpgradeUI {
             
             .node-button {
                 position: absolute;
-                width: 60px;
-                height: 60px;
+                width: 50px;
+                height: 50px;
                 border: none;
                 background: transparent;
                 cursor: pointer;
                 pointer-events: auto;
-                border-radius: 12px;
+                border-radius: 10px;
                 transform: translate(-50%, -50%);
                 transition: background 0.2s;
             }
@@ -478,10 +515,8 @@ class UpgradeUI {
             
             // Only process if click is within canvas bounds
             if (x >= 0 && x <= this.canvas.width && y >= 0 && y <= this.canvas.height) {
-                console.log('Overlay click within canvas bounds:', x, y);
                 const node = this.getNodeAtPosition(x, y);
                 if (node) {
-                    console.log('Found node:', node.name);
                     e.stopPropagation();
                     this.openModal(node);
                     return;
@@ -506,10 +541,80 @@ class UpgradeUI {
         });
     }
     
+    // ============================================
+    // RADIAL LAYOUT CALCULATION
+    // ============================================
+    
+    calculateLayout() {
+        this.nodePositions.clear();
+        
+        // Get the root node
+        const root = this.tree.getNode(this.tree.rootId);
+        if (!root) return;
+        
+        // Start recursive layout from root
+        this.layoutNode(root, this.centerX, this.centerY, 0);
+    }
+    
+    layoutNode(node, x, y, depth) {
+        // Store this node's position
+        this.nodePositions.set(node.id, { x, y, depth });
+        
+        // Get children of this node
+        const children = this.tree.getChildren(node.id);
+        if (children.length === 0) return;
+        
+        // Calculate positions for children using radial fan layout
+        const childPositions = this.calculateChildPositions(x, y, children.length, depth);
+        
+        // Recursively layout children
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i];
+            const pos = childPositions[i];
+            this.layoutNode(child, pos.x, pos.y, depth + 1);
+        }
+    }
+    
+    calculateChildPositions(parentX, parentY, childCount, depth) {
+        if (childCount === 0) return [];
+        
+        const config = LAYOUT_CONFIG;
+        const spreadConfig = config.spreadAngles[Math.min(childCount, 6)] || config.spreadAngles[6];
+        const radiusScale = config.radiusScale[Math.min(childCount, 6)] || config.radiusScale[6];
+        const radius = config.baseRadius * radiusScale;
+        
+        const positions = [];
+        
+        for (let i = 0; i < childCount; i++) {
+            // Calculate angle (interpolate between start and end)
+            let t;
+            if (childCount === 1) {
+                t = 0.5; // Center for single child
+            } else {
+                t = i / (childCount - 1);
+            }
+            
+            const angleDegrees = spreadConfig.start + (spreadConfig.end - spreadConfig.start) * t;
+            const angleRadians = angleDegrees * Math.PI / 180;
+            
+            // Calculate position relative to parent
+            // 90° is straight down, angles fan out from there
+            const x = parentX + Math.cos(angleRadians) * radius;
+            const y = parentY + Math.sin(angleRadians) * radius;
+            
+            positions.push({ x, y, angle: angleDegrees });
+        }
+        
+        return positions;
+    }
+    
     getNodeScreenPosition(node) {
-        const x = this.centerX + node.x * this.nodeSpacing;
-        const y = this.centerY + node.y * this.nodeSpacing;
-        return { x, y };
+        const pos = this.nodePositions.get(node.id);
+        if (pos) {
+            return { x: pos.x, y: pos.y };
+        }
+        // Fallback to old method if layout hasn't been calculated
+        return { x: this.centerX, y: this.centerY };
     }
     
     getNodeAtPosition(mouseX, mouseY) {
@@ -519,7 +624,7 @@ class UpgradeUI {
             const dy = mouseY - pos.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             
-            if (dist < this.nodeSize / 2) {
+            if (dist < this.nodeSize / 2 + 5) {
                 return node;
             }
         }
@@ -531,10 +636,7 @@ class UpgradeUI {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         
-        console.log('Canvas click at:', x, y);
-        
         const node = this.getNodeAtPosition(x, y);
-        console.log('Node at position:', node ? node.name : 'none');
         
         if (node) {
             e.preventDefault();
@@ -673,7 +775,10 @@ class UpgradeUI {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight - 140;
         this.centerX = this.canvas.width / 2;
-        this.centerY = 140;
+        this.centerY = 80;
+        
+        // Recalculate layout
+        this.calculateLayout();
         
         // Match button container to canvas size
         this.nodeButtonsContainer.style.width = `${this.canvas.width}px`;
@@ -694,14 +799,13 @@ class UpgradeUI {
             const btn = document.createElement('button');
             btn.className = `node-button ${!isUnlocked ? 'locked' : ''}`;
             btn.style.left = `${pos.x}px`;
-            btn.style.top = `${pos.y-90}px`; // TODO: Un-hardcode this
+            btn.style.top = `${pos.y}px`;
             btn.dataset.nodeId = node.id;
             btn.title = isUnlocked ? node.name : 'Locked';
             
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (node.isUnlocked(this.tree)) {
-                    console.log('Node button clicked:', node.name);
                     this.openModal(node);
                 }
             });
@@ -715,22 +819,57 @@ class UpgradeUI {
             if (!this.visible) return;
             
             this.glowPhase += 0.03;
+            this.updateEnergyParticles();
             this.render();
             requestAnimationFrame(render);
         };
         render();
     }
     
+    // ============================================
+    // ENERGY PARTICLE SYSTEM
+    // ============================================
+    
+    updateEnergyParticles() {
+        // Update existing particles
+        this.energyParticles = this.energyParticles.filter(particle => {
+            particle.progress += particle.speed;
+            return particle.progress < 1;
+        });
+        
+        // Spawn new particles on invested connections
+        for (const node of this.tree.getAllNodes()) {
+            if (node.parentId && node.hasInvestment()) {
+                // Spawn particle occasionally
+                if (Math.random() < 0.02) {
+                    this.energyParticles.push({
+                        nodeId: node.id,
+                        progress: 0,
+                        speed: 0.01 + Math.random() * 0.01,
+                        color: node.color
+                    });
+                }
+            }
+        }
+    }
+    
+    // ============================================
+    // RENDERING
+    // ============================================
+    
     render() {
         const ctx = this.ctx;
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Draw connections first
+        // Draw connections first (behind nodes)
         for (const node of this.tree.getAllNodes()) {
             if (node.parentId) {
                 this.renderConnection(node);
             }
         }
+        
+        // Draw energy particles
+        this.renderEnergyParticles();
         
         // Draw nodes
         for (const node of this.tree.getAllNodes()) {
@@ -750,41 +889,101 @@ class UpgradeUI {
         const hasInvestment = node.hasInvestment();
         const parentHasInvestment = parent.hasInvestment();
         
-        // Determine line style
-        let alpha = 0.15;
-        let lineWidth = 2;
-        let glowColor = null;
+        // Determine line style based on state
+        let alpha, lineWidth, glowColor, dashPattern;
         
         if (hasInvestment) {
+            // Invested state - full brightness, solid line
             alpha = 0.6;
             lineWidth = 3;
             glowColor = node.color;
+            dashPattern = [];
         } else if (isUnlocked && parentHasInvestment) {
-            // Unlockable - soft glow
-            alpha = 0.3 + Math.sin(this.glowPhase) * 0.15;
+            // Unlockable state - pulsing, solid line
+            alpha = 0.25 + Math.sin(this.glowPhase * 1.5) * 0.15;
             lineWidth = 2;
             glowColor = node.color;
+            dashPattern = [];
+        } else {
+            // Locked state - dim, dashed line
+            alpha = 0.12;
+            lineWidth = 1;
+            glowColor = null;
+            dashPattern = [5, 8];
         }
         
-        // Draw glow
+        // Calculate control point for bezier curve
+        const midX = (startPos.x + endPos.x) / 2;
+        const midY = startPos.y + (endPos.y - startPos.y) * 0.4;
+        
+        // Draw glow layer
         if (glowColor) {
             ctx.beginPath();
-            ctx.moveTo(startPos.x, startPos.y);
-            ctx.lineTo(endPos.x, endPos.y);
+            ctx.moveTo(startPos.x, startPos.y + this.nodeSize / 2);
+            ctx.quadraticCurveTo(midX, midY, endPos.x, endPos.y - this.nodeSize / 2);
             ctx.strokeStyle = glowColor;
-            ctx.lineWidth = lineWidth + 6;
-            ctx.globalAlpha = alpha * 0.3;
+            ctx.lineWidth = lineWidth + 8;
+            ctx.globalAlpha = alpha * 0.2;
+            ctx.setLineDash([]);
             ctx.stroke();
             ctx.globalAlpha = 1;
         }
         
-        // Draw line
+        // Draw main line
         ctx.beginPath();
-        ctx.moveTo(startPos.x, startPos.y);
-        ctx.lineTo(endPos.x, endPos.y);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.moveTo(startPos.x, startPos.y + this.nodeSize / 2);
+        ctx.quadraticCurveTo(midX, midY, endPos.x, endPos.y - this.nodeSize / 2);
+        
+        if (dashPattern.length > 0) {
+            ctx.strokeStyle = `rgba(100, 100, 120, ${alpha})`;
+            ctx.setLineDash(dashPattern);
+        } else {
+            ctx.strokeStyle = glowColor ? glowColor : `rgba(255, 255, 255, ${alpha})`;
+            ctx.setLineDash([]);
+        }
+        
         ctx.lineWidth = lineWidth;
+        ctx.globalAlpha = dashPattern.length > 0 ? 1 : alpha;
         ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([]);
+    }
+    
+    renderEnergyParticles() {
+        const ctx = this.ctx;
+        
+        for (const particle of this.energyParticles) {
+            const node = this.tree.getNode(particle.nodeId);
+            if (!node || !node.parentId) continue;
+            
+            const parent = this.tree.getNode(node.parentId);
+            if (!parent) continue;
+            
+            const startPos = this.getNodeScreenPosition(parent);
+            const endPos = this.getNodeScreenPosition(node);
+            
+            // Calculate position along bezier curve
+            const t = particle.progress;
+            const midX = (startPos.x + endPos.x) / 2;
+            const midY = startPos.y + (endPos.y - startPos.y) * 0.4;
+            
+            // Quadratic bezier formula
+            const x = Math.pow(1-t, 2) * startPos.x + 
+                     2 * (1-t) * t * midX + 
+                     Math.pow(t, 2) * endPos.x;
+            const y = Math.pow(1-t, 2) * (startPos.y + this.nodeSize / 2) + 
+                     2 * (1-t) * t * midY + 
+                     Math.pow(t, 2) * (endPos.y - this.nodeSize / 2);
+            
+            // Draw particle with glow
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = particle.color;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = particle.color;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
     }
     
     renderNode(node) {
@@ -792,7 +991,7 @@ class UpgradeUI {
         const pos = this.getNodeScreenPosition(node);
         const size = this.nodeSize;
         const halfSize = size / 2;
-        const radius = 12;
+        const radius = 10;
         
         const isUnlocked = node.isUnlocked(this.tree);
         const hasInvestment = node.hasInvestment();
@@ -800,84 +999,125 @@ class UpgradeUI {
         const isHovered = this.hoverNode === node;
         
         // Determine visual state
-        let bgAlpha = 0.1;
-        let borderAlpha = 0.2;
-        let iconAlpha = 0.4;
-        let glowIntensity = 0;
+        let bgAlpha, borderAlpha, iconAlpha, glowIntensity;
+        let isLocked = !isUnlocked;
+        let isUnlockable = isUnlocked && !hasInvestment;
+        let parentHasInvestment = true;
         
-        if (hasInvestment) {
-            bgAlpha = 0.2;
-            borderAlpha = 0.6;
-            iconAlpha = 1;
-            glowIntensity = 0.4 + Math.sin(this.glowPhase * 1.5) * 0.1;
-        } else if (isUnlocked) {
+        if (!node.isRoot && node.parentId) {
             const parent = this.tree.getNode(node.parentId);
-            if (!parent || parent.hasInvestment()) {
-                // Unlockable
-                bgAlpha = 0.1;
-                borderAlpha = 0.3 + Math.sin(this.glowPhase) * 0.1;
-                iconAlpha = 0.6;
-                glowIntensity = 0.15 + Math.sin(this.glowPhase) * 0.1;
+            if (parent) {
+                parentHasInvestment = parent.hasInvestment();
             }
         }
         
-        if (isHovered) {
-            bgAlpha += 0.1;
-            borderAlpha += 0.2;
-            glowIntensity += 0.1;
+        if (hasInvestment) {
+            // Invested state - bright and glowing
+            bgAlpha = 0.8;
+            borderAlpha = 0.8;
+            iconAlpha = 1;
+            glowIntensity = 0.35 + Math.sin(this.glowPhase * 1.5) * 0.1;
+        } else if (isUnlockable && parentHasInvestment) {
+            // Unlockable state - pulsing glow
+            bgAlpha = 0.5;
+            borderAlpha = 0.4 + Math.sin(this.glowPhase * 1.5) * 0.2;
+            iconAlpha = 0.65;
+            glowIntensity = 0.15 + Math.sin(this.glowPhase * 1.5) * 0.12;
+        } else if (isUnlocked) {
+            // Unlocked but parent not invested - dim
+            bgAlpha = 0.35;
+            borderAlpha = 0.25;
+            iconAlpha = 0.45;
+            glowIntensity = 0;
+        } else {
+            // Locked state - gray and faded
+            bgAlpha = 0.25;
+            borderAlpha = 0.15;
+            iconAlpha = 0.3;
+            glowIntensity = 0;
         }
+        
+        if (isHovered && isUnlocked) {
+            bgAlpha += 0.15;
+            borderAlpha += 0.2;
+            glowIntensity += 0.15;
+        }
+        
+        // Determine colors based on state
+        let nodeColor = hasInvestment || (isUnlockable && parentHasInvestment) ? node.color : '#666677';
+        let iconColor = hasInvestment ? node.color : (isUnlocked ? `rgba(255, 255, 255, ${iconAlpha})` : `rgba(120, 120, 140, ${iconAlpha})`);
+        let borderColor = hasInvestment ? node.color : (isUnlocked ? `rgba(255, 255, 255, ${borderAlpha})` : `rgba(100, 100, 120, ${borderAlpha})`);
         
         // Draw outer glow
         if (glowIntensity > 0) {
             const gradient = ctx.createRadialGradient(
-                pos.x, pos.y, halfSize * 0.5,
-                pos.x, pos.y, halfSize * 2
+                pos.x, pos.y, halfSize * 0.3,
+                pos.x, pos.y, halfSize * 2.2
             );
-            gradient.addColorStop(0, `${node.color}${Math.floor(glowIntensity * 80).toString(16).padStart(2, '0')}`);
+            gradient.addColorStop(0, `${nodeColor}${Math.floor(glowIntensity * 100).toString(16).padStart(2, '0')}`);
             gradient.addColorStop(1, 'transparent');
             
             ctx.fillStyle = gradient;
-            ctx.fillRect(pos.x - halfSize * 2, pos.y - halfSize * 2, size * 2, size * 2);
+            ctx.fillRect(pos.x - halfSize * 2.5, pos.y - halfSize * 2.5, size * 2.5, size * 2.5);
         }
         
         // Draw background
         ctx.beginPath();
         ctx.roundRect(pos.x - halfSize, pos.y - halfSize, size, size, radius);
-        ctx.fillStyle = `rgba(30, 30, 40, ${bgAlpha + 0.8})`;
+        ctx.fillStyle = `rgba(25, 25, 35, ${bgAlpha + 0.7})`;
         ctx.fill();
         
         // Draw border
-        ctx.strokeStyle = hasInvestment ? node.color : `rgba(255, 255, 255, ${borderAlpha})`;
+        ctx.strokeStyle = borderColor;
         ctx.lineWidth = hasInvestment ? 2 : 1;
         ctx.stroke();
         
         // Draw icon
-        ctx.font = '24px sans-serif';
+        ctx.font = '22px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = hasInvestment ? node.color : `rgba(255, 255, 255, ${iconAlpha})`;
-        ctx.fillText(node.icon, pos.x, pos.y - 4);
+        ctx.fillStyle = iconColor;
+        ctx.fillText(node.icon, pos.x, pos.y - 2);
         
-        // Determine level text to display
-        let levelText = level.toString();
-        if (!node.isRoot && node.parentId && !isUnlocked) {
+        // Determine level/requirement text
+        let levelText, levelColor;
+        
+        if (hasInvestment) {
+            // Show level number in gold
+            levelText = level.toString();
+            levelColor = '#ffd700';
+        } else if (isLocked) {
+            // Show negative number indicating levels needed
             const parent = this.tree.getNode(node.parentId);
             if (parent) {
                 const diff = parent.getLevel() - node.requiredParentLevel;
-                if (diff < 0) levelText = diff.toString();
+                if (diff < 0) {
+                    levelText = diff.toString();
+                    levelColor = 'rgba(150, 150, 170, 0.7)';
+                } else {
+                    levelText = '0';
+                    levelColor = 'rgba(150, 150, 170, 0.5)';
+                }
+            } else {
+                levelText = '0';
+                levelColor = 'rgba(150, 150, 170, 0.5)';
             }
+        } else {
+            // Unlocked but not invested - show 0
+            levelText = '0';
+            levelColor = 'rgba(255, 255, 255, 0.4)';
         }
         
-        // Draw level number below
-        ctx.font = '600 14px Outfit, sans-serif';
-        ctx.fillStyle = hasInvestment ? '#ffd700' : `rgba(255, 255, 255, ${iconAlpha * 0.6})`;
-        ctx.fillText(levelText, pos.x, pos.y + halfSize + 16);
+        // Draw level indicator below icon
+        ctx.font = '600 13px Outfit, sans-serif';
+        ctx.fillStyle = levelColor;
+        ctx.fillText(levelText, pos.x, pos.y + halfSize + 14);
         
         // Draw name below level (only if invested or hovered)
-        if (hasInvestment || isHovered) {
+        if (hasInvestment || (isHovered && isUnlocked)) {
             ctx.font = '11px Outfit, sans-serif';
-            ctx.fillStyle = `rgba(255, 255, 255, 0.5)`;
-            ctx.fillText(node.name, pos.x, pos.y + halfSize + 32);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.fillText(node.name, pos.x, pos.y + halfSize + 28);
         }
     }
 }

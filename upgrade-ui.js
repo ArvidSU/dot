@@ -229,7 +229,9 @@ class UpgradeUI {
             
             #tree-canvas {
                 display: block;
-                pointer-events: none;
+                position: absolute;
+                top: 0;
+                left: 0;
             }
             
             .tree-canvas-container {
@@ -243,6 +245,8 @@ class UpgradeUI {
                 position: absolute;
                 top: 0;
                 left: 0;
+                width: 100%;
+                height: 100%;
                 pointer-events: none;
             }
             
@@ -608,6 +612,26 @@ class UpgradeUI {
         return positions;
     }
     
+    getTreeDepth() {
+        // Calculate the maximum depth of the tree
+        const root = this.tree.getNode(this.tree.rootId);
+        if (!root) return 0;
+        
+        const calculateDepth = (nodeId, currentDepth) => {
+            const children = this.tree.getChildren(nodeId);
+            if (children.length === 0) return currentDepth;
+            
+            let maxChildDepth = currentDepth;
+            for (const child of children) {
+                const childDepth = calculateDepth(child.id, currentDepth + 1);
+                maxChildDepth = Math.max(maxChildDepth, childDepth);
+            }
+            return maxChildDepth;
+        };
+        
+        return calculateDepth(root.id, 0);
+    }
+    
     getNodeScreenPosition(node) {
         const pos = this.nodePositions.get(node.id);
         if (pos) {
@@ -679,7 +703,16 @@ class UpgradeUI {
         document.getElementById('modal-title').textContent = node.name;
         document.getElementById('modal-description').textContent = node.description;
         const maxLevel = node.properties.reduce((sum, prop) => sum + prop.maxLevel, 0);
-        document.getElementById('modal-level').textContent = `${node.getLevel()}/${maxLevel}`;
+        const currentLevel = node.getLevel();
+        const isNodeMaxed = currentLevel >= maxLevel;
+        const modalLevelEl = document.getElementById('modal-level');
+        if (isNodeMaxed) {
+            modalLevelEl.textContent = `${currentLevel}/${maxLevel} ✓ MAXED`;
+            modalLevelEl.style.color = '#00ff88';
+        } else {
+            modalLevelEl.textContent = `${currentLevel}/${maxLevel}`;
+            modalLevelEl.style.color = '#ffd700';
+        }
         
         const propsContainer = document.getElementById('modal-properties');
         propsContainer.innerHTML = '';
@@ -775,7 +808,14 @@ class UpgradeUI {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight - 140;
         this.centerX = this.canvas.width / 2;
-        this.centerY = 80;
+        
+        // Calculate tree height to center vertically
+        // Estimate: we need to measure the actual tree depth
+        const treeDepth = this.getTreeDepth();
+        const treeHeight = treeDepth * LAYOUT_CONFIG.tierSpacing;
+        
+        // Center vertically with some top padding, ensuring root isn't too high
+        this.centerY = Math.max(80, (this.canvas.height - treeHeight) / 2 + 40);
         
         // Recalculate layout
         this.calculateLayout();
@@ -996,6 +1036,8 @@ class UpgradeUI {
         const isUnlocked = node.isUnlocked(this.tree);
         const hasInvestment = node.hasInvestment();
         const level = node.getLevel();
+        const maxLevel = node.properties.reduce((sum, prop) => sum + prop.maxLevel, 0);
+        const isMaxed = level >= maxLevel && hasInvestment;
         const isHovered = this.hoverNode === node;
         
         // Determine visual state
@@ -1011,7 +1053,13 @@ class UpgradeUI {
             }
         }
         
-        if (hasInvestment) {
+        if (isMaxed) {
+            // Maxed state - special green glow
+            bgAlpha = 0.85;
+            borderAlpha = 0.9;
+            iconAlpha = 1;
+            glowIntensity = 0.4 + Math.sin(this.glowPhase * 1.5) * 0.1;
+        } else if (hasInvestment) {
             // Invested state - bright and glowing
             bgAlpha = 0.8;
             borderAlpha = 0.8;
@@ -1044,9 +1092,22 @@ class UpgradeUI {
         }
         
         // Determine colors based on state
-        let nodeColor = hasInvestment || (isUnlockable && parentHasInvestment) ? node.color : '#666677';
-        let iconColor = hasInvestment ? node.color : (isUnlocked ? `rgba(255, 255, 255, ${iconAlpha})` : `rgba(120, 120, 140, ${iconAlpha})`);
-        let borderColor = hasInvestment ? node.color : (isUnlocked ? `rgba(255, 255, 255, ${borderAlpha})` : `rgba(100, 100, 120, ${borderAlpha})`);
+        let nodeColor, iconColor, borderColor;
+        
+        if (isMaxed) {
+            // Maxed state - green color scheme
+            nodeColor = '#00ff88';
+            iconColor = node.color;
+            borderColor = '#00ff88';
+        } else if (hasInvestment || (isUnlockable && parentHasInvestment)) {
+            nodeColor = node.color;
+            iconColor = node.color;
+            borderColor = node.color;
+        } else {
+            nodeColor = '#666677';
+            iconColor = isUnlocked ? `rgba(255, 255, 255, ${iconAlpha})` : `rgba(120, 120, 140, ${iconAlpha})`;
+            borderColor = isUnlocked ? `rgba(255, 255, 255, ${borderAlpha})` : `rgba(100, 100, 120, ${borderAlpha})`;
+        }
         
         // Draw outer glow
         if (glowIntensity > 0) {
@@ -1082,7 +1143,11 @@ class UpgradeUI {
         // Determine level/requirement text
         let levelText, levelColor;
         
-        if (hasInvestment) {
+        if (isMaxed) {
+            // Show MAX text for fully upgraded nodes
+            levelText = 'MAX';
+            levelColor = '#00ff88'; // Green color for maxed
+        } else if (hasInvestment) {
             // Show level number in gold
             levelText = level.toString();
             levelColor = '#ffd700';
@@ -1112,6 +1177,33 @@ class UpgradeUI {
         ctx.font = '600 13px Outfit, sans-serif';
         ctx.fillStyle = levelColor;
         ctx.fillText(levelText, pos.x, pos.y + halfSize + 14);
+        
+        // Draw maxed indicator (checkmark badge) in top-right corner
+        if (isMaxed) {
+            const badgeX = pos.x + halfSize - 4;
+            const badgeY = pos.y - halfSize + 4;
+            const badgeSize = 14;
+            
+            // Draw badge background
+            ctx.beginPath();
+            ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
+            ctx.fillStyle = '#00ff88';
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#00ff88';
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            
+            // Draw checkmark
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(badgeX - 3, badgeY);
+            ctx.lineTo(badgeX - 1, badgeY + 2);
+            ctx.lineTo(badgeX + 3, badgeY - 2);
+            ctx.stroke();
+        }
         
         // Draw name below level (only if invested or hovered)
         if (hasInvestment || (isHovered && isUnlocked)) {

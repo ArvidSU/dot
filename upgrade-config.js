@@ -49,9 +49,7 @@ const UPGRADE_TREE_CONFIG = {
             y: 1,
             properties: [
                 createPropertyConfig('attractStrength', 'Pull Force', 'Strength of the attractive force', '⚡', 1, 0.25, 10, 'multiply', 'attract'),
-                createPropertyConfig('attractRadius', 'Field Range', 'How far the attraction reaches', '◯', 1, 0.15, 8, 'multiply', 'attract'),
-                createPropertyConfig('attractDuration', 'Persistence', 'How long attract magnets last', '◷', 1, 0.2, 8, 'multiply', 'attract'),
-                createPropertyConfig('attractLimit', 'Limit', 'Maximum number of attract magnets you can place', '#', 1, 1, 5, 'add', 'attract')
+                createPropertyConfig('attractRadius', 'Field Range', 'How far the attraction reaches', '◯', 1, 0.15, 8, 'multiply', 'attract')
             ]
         },
         {
@@ -66,9 +64,7 @@ const UPGRADE_TREE_CONFIG = {
             y: 1,
             properties: [
                 createPropertyConfig('repelStrength', 'Push Force', 'Strength of the repulsive force', '⚡', 1, 0.25, 10, 'multiply', 'repel'),
-                createPropertyConfig('repelRadius', 'Field Range', 'How far the repulsion reaches', '◯', 1, 0.15, 8, 'multiply', 'repel'),
-                createPropertyConfig('repelDuration', 'Persistence', 'How long repel magnets last', '◷', 1, 0.2, 8, 'multiply', 'repel'),
-                createPropertyConfig('repelLimit', 'Limit', 'Maximum number of repel magnets you can place', '#', 1, 1, 5, 'add', 'repel')
+                createPropertyConfig('repelRadius', 'Field Range', 'How far the repulsion reaches', '◯', 1, 0.15, 8, 'multiply', 'repel')
             ]
         },
         {
@@ -78,7 +74,7 @@ const UPGRADE_TREE_CONFIG = {
             icon: '✧',
             color: '#00ffcc',
             parentId: 'attract',
-            requiredParentLevel: Math.floor(5 + 8 + 8 + 5 * 0.75),
+            requiredParentLevel: Math.floor((10 + 8) * 0.75), // 75% of total attract property levels (strength + radius)
             x: -2,
             y: 2,
             properties: [

@@ -395,13 +395,9 @@ class UpgradeTree {
             // Attract upgrades
             attractStrength: 1,
             attractRadius: 1,
-            attractDuration: 1,
-            attractLimit: 1,
             // Repel upgrades
             repelStrength: 1,
             repelRadius: 1,
-            repelDuration: 1,
-            repelLimit: 1,
             // Dot upgrades (future)
             dotSpeed: 1,
             dotSize: 1,
@@ -559,28 +555,6 @@ function createDefaultUpgradeTree() {
                 maxLevel: 8,
                 costFunction: createDynamicCostFunction({ id: 'attractRadius', valuePerLevel: 0.15, maxLevel: 8, effectType: 'multiply' }, 'attract'),
                 effectType: 'multiply'
-            },
-            {
-                id: 'attractDuration',
-                name: 'Persistence',
-                description: 'How long attract magnets last',
-                icon: '◷',
-                baseValue: 1,
-                valuePerLevel: 0.2,
-                maxLevel: 8,
-                costFunction: createDynamicCostFunction({ id: 'attractDuration', valuePerLevel: 0.2, maxLevel: 8, effectType: 'multiply' }, 'attract'),
-                effectType: 'multiply'
-            },
-            {
-                id: 'attractLimit',
-                name: 'Limit',
-                description: 'Maximum number of attract magnets you can place',
-                icon: '#',
-                baseValue: 1,
-                valuePerLevel: 1,
-                maxLevel: 5,
-                costFunction: createDynamicCostFunction({ id: 'attractLimit', valuePerLevel: 1, maxLevel: 5, effectType: 'add' }, 'attract'),
-                effectType: 'add'
             }
         ]
     }
@@ -619,34 +593,12 @@ function createDefaultUpgradeTree() {
                 maxLevel: 8,
                 costFunction: createDynamicCostFunction({ id: 'repelRadius', valuePerLevel: 0.15, maxLevel: 8, effectType: 'multiply' }, 'repel'),
                 effectType: 'multiply'
-            },
-            {
-                id: 'repelDuration',
-                name: 'Persistence',
-                description: 'How long repel magnets last',
-                icon: '◷',
-                baseValue: 1,
-                valuePerLevel: 0.2,
-                maxLevel: 8,
-                costFunction: createDynamicCostFunction({ id: 'repelDuration', valuePerLevel: 0.2, maxLevel: 8, effectType: 'multiply' }, 'repel'),
-                effectType: 'multiply'
-            },
-            {
-                id: 'repelLimit',
-                name: 'Limit',
-                description: 'Maximum number of repel magnets you can place',
-                icon: '#',
-                baseValue: 1,
-                valuePerLevel: 1,
-                maxLevel: 5,
-                costFunction: createDynamicCostFunction({ id: 'repelLimit', valuePerLevel: 1, maxLevel: 5, effectType: 'add' }, 'repel'),
-                effectType: 'add'
             }
         ]
     }
     tree.addNode(repel);
     
-    // Advanced Attract node (unlocks at attract level 5)
+    // Advanced Attract node (unlocks at attract level ~75%)
     const attractAdvanced = {
         id: 'attractAdvanced',
         name: 'Law of Attraction',
@@ -654,7 +606,7 @@ function createDefaultUpgradeTree() {
         icon: '✧',
         color: '#00ffcc',
         parentId: 'attract',
-        requiredParentLevel: Math.floor(5 + 8 + 8 + 5 * 0.75),
+        requiredParentLevel: Math.floor((10 + 8) * 0.75), // 75% of total attract property levels (strength + radius)
         x: -2,
         y: 2,
         properties: [
@@ -737,11 +689,11 @@ function createDefaultUpgradeTree() {
     const annihalation = {
         id: 'annihalation',
         name: 'Annihalation',
-        description: 'Annihalate on contact with threats. Saves your life at a cost.',
+        description: 'Annihalate on contact with danger. Saves your life at a cost.',
         icon: '☠',
         color: '#ffaa00',
         parentId: 'dot',
-        requiredParentLevel: 5,
+        requiredParentLevel: 3,
         x: 0,
         y: 1,
         properties: [
@@ -788,7 +740,7 @@ function createDefaultUpgradeTree() {
                 name: 'Profit',
                 description: 'Increases the coin gain by 1 coin per level',
                 icon: '💎',
-                baseValue: 0,
+                baseValue: 1,
                 valuePerLevel: 1,
                 maxLevel: 5,
                 costFunction: createDynamicCostFunction({ id: 'coinGain', valuePerLevel: 1, maxLevel: 5, effectType: 'add' }, 'investment'),
@@ -816,9 +768,9 @@ function createDefaultUpgradeTree() {
                 description: 'Chance to spawn a dot when collecting a treat',
                 icon: '●',
                 baseValue: 0,
-                valuePerLevel: 0.1,
+                valuePerLevel: 0.09,
                 maxLevel: 10,
-                costFunction: createDynamicCostFunction({ id: 'spawnDotOnTreat', valuePerLevel: 0.1, maxLevel: 10, effectType: 'add' }, 'resurrection'),
+                costFunction: createDynamicCostFunction({ id: 'spawnDotOnTreat', valuePerLevel: 0.09, maxLevel: 10, effectType: 'add' }, 'resurrection'),
                 effectType: 'add'
             },
             {
@@ -827,9 +779,9 @@ function createDefaultUpgradeTree() {
                 description: 'Chance to spawn a treat when a dot dies',
                 icon: '★',
                 baseValue: 0,
-                valuePerLevel: 0.1,
+                valuePerLevel: 0.09,
                 maxLevel: 10,
-                costFunction: createDynamicCostFunction({ id: 'spawnTreatOnDeath', valuePerLevel: 0.1, maxLevel: 10, effectType: 'add' }, 'resurrection'),
+                costFunction: createDynamicCostFunction({ id: 'spawnTreatOnDeath', valuePerLevel: 0.09, maxLevel: 10, effectType: 'add' }, 'resurrection'),
                 effectType: 'add'
             }
         ]

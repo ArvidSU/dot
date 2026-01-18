@@ -12,7 +12,8 @@ class Game {
         
         // Game state
         this.state = 'mainMenu'; // 'playing', 'paused', 'gameOver', 'mainMenu'
-        this.runScore = 0; // Treats collected this run
+        this.runScore = 0; // Treat value collected this run
+        this.treatsCollected = 0;
         this.gameTime = 0;
         
         // Upgrade tree (persistent)
@@ -28,6 +29,7 @@ class Game {
         // Screen shake
         this.shakeIntensity = 0;
         this.shakeDecay = 5;
+        this.lastAnnihilationShakeTime = -Infinity;
         
         // Entities
         this.dot = null;
@@ -48,7 +50,7 @@ class Game {
         // Timing
         this.lastTime = 0;
         
-        // Magnet control state
+        // Magnet control state - now stores the active persistent magnet per type
         this.activeMagnets = {
             attract: null,
             repel: null
@@ -57,11 +59,6 @@ class Game {
             attract: null,
             repel: null
         };
-        this.magnetCooldown = {
-            attract: 0,
-            repel: 0
-        };
-        this.magnetCooldownTime = 0.1; // 100ms cooldown between magnet placements
         
         // Initialize
         this.resize();
@@ -81,7 +78,7 @@ class Game {
     setupEventListeners() {
         window.addEventListener('resize', () => this.resize());
         
-        // Mouse down to start magnet activation
+        // Mouse down to create a persistent magnet
         this.canvas.addEventListener('mousedown', (e) => {
             if (this.state !== 'playing') return;
             
@@ -93,29 +90,32 @@ class Game {
             // Left click = attract, Right click = repel
             const type = e.button === 2 ? 'repel' : 'attract';
             this.mousePositions[type] = { x, y };
+            
+            // Create a persistent magnet at this position
+            this.createPersistentMagnet(x, y, type);
         });
         
-        // Mouse up to stop magnet activation
+        // Mouse up to kill the persistent magnet
         this.canvas.addEventListener('mouseup', (e) => {
             if (this.state !== 'playing') return;
             
             e.preventDefault();
             const type = e.button === 2 ? 'repel' : 'attract';
             this.mousePositions[type] = null;
-            this.activeMagnets[type] = null;
+            this.destroyPersistentMagnet(type);
         });
         
-        // Mouse leave to stop magnet activation
+        // Mouse leave to kill any active magnets
         this.canvas.addEventListener('mouseleave', () => {
             if (this.state !== 'playing') return;
             
             this.mousePositions.attract = null;
             this.mousePositions.repel = null;
-            this.activeMagnets.attract = null;
-            this.activeMagnets.repel = null;
+            this.destroyPersistentMagnet('attract');
+            this.destroyPersistentMagnet('repel');
         });
         
-        // Mouse move to update magnet position
+        // Mouse move to update persistent magnet position
         this.canvas.addEventListener('mousemove', (e) => {
             if (this.state !== 'playing') return;
             
@@ -126,9 +126,15 @@ class Game {
             // Update active magnet positions
             if (this.mousePositions.attract) {
                 this.mousePositions.attract = { x, y };
+                if (this.activeMagnets.attract) {
+                    this.activeMagnets.attract.setPosition(x, y);
+                }
             }
             if (this.mousePositions.repel) {
                 this.mousePositions.repel = { x, y };
+                if (this.activeMagnets.repel) {
+                    this.activeMagnets.repel.setPosition(x, y);
+                }
             }
         });
         
@@ -202,10 +208,11 @@ class Game {
     reset() {
         this.state = 'playing';
         this.runScore = 0;
+        this.treatsCollected = 0;
         this.gameTime = 0;
         
         // Reset dot at center
-        this.dot = new Dot(this.canvas.width / 2, this.canvas.height / 2);
+        this.dot = new Dot(this.canvas.width / 2, this.canvas.height / 2, false, true);
         this.dots = [];
         this.magnets = [];
         this.dangers = [];
@@ -224,10 +231,6 @@ class Game {
         this.mousePositions = {
             attract: null,
             repel: null
-        };
-        this.magnetCooldown = {
-            attract: 0,
-            repel: 0
         };
         
         // Update UI
@@ -282,26 +285,34 @@ class Game {
         return this.upgradeTree.getStats();
     }
     
-    placeMagnet(x, y, type) {
-        const stats = this.getStats();
+    createPersistentMagnet(x, y, type) {
+        // If there's already an active magnet of this type, don't create another
+        if (this.activeMagnets[type]) return;
         
-        // Check magnet limit
-        const limit = type === 'attract' ? stats.attractLimit : stats.repelLimit;
-        const currentCount = this.magnets.filter(m => m.type === type).length;
-        if (currentCount >= limit) return;
+        const stats = this.getStats();
         
         // Create upgrade object for magnet based on tree stats
         const upgrades = {
-            strength: type === 'attract' ? stats.attractStrength : stats.repelStrength,
-            radius: type === 'attract' ? stats.attractRadius : stats.repelRadius,
-            duration: type === 'attract' ? stats.attractDuration : stats.repelDuration
+            attractStrength: stats.attractStrength,
+            attractRadius: stats.attractRadius,
+            repelStrength: stats.repelStrength,
+            repelRadius: stats.repelRadius,
+            lawOfAttractionRadius: stats.lawOfAttractionRadius
         };
         
-        const magnet = new Magnet(x, y, type, upgrades);
+        const magnet = new Magnet(x, y, type, upgrades, true); // true = persistent
         this.magnets.push(magnet);
+        this.activeMagnets[type] = magnet;
         
         // Spawn particles at magnet location
         this.spawnMagnetParticles(x, y, type);
+    }
+    
+    destroyPersistentMagnet(type) {
+        if (this.activeMagnets[type]) {
+            this.activeMagnets[type].kill();
+            this.activeMagnets[type] = null;
+        }
     }
     
     spawnMagnetParticles(x, y, type) {
@@ -309,8 +320,13 @@ class Game {
     }
     
     spawnDanger() {
-        const isGoldDigger = Math.random() < 0.2;
-        const radius = isGoldDigger ? 15 : 20 + Math.random() * 20;
+        const canSpawnRiftStalker = this.treatsCollected >= 200;
+        const riftChance = canSpawnRiftStalker
+            ? Math.min(0.45, 0.28 + (this.treatsCollected - 200) * 0.001)
+            : 0;
+        const isRiftStalker = canSpawnRiftStalker && Math.random() < riftChance;
+        const isGoldDigger = !isRiftStalker && Math.random() < 0.2;
+        const radius = isRiftStalker ? 18 : (isGoldDigger ? 15 : 20 + Math.random() * 20);
         
         const pos = this.physics.findSafeSpawnPosition(
             this.dot, this.dangers,
@@ -318,7 +334,10 @@ class Game {
             radius + 50, 200
         );
         
-        if (isGoldDigger) {
+        if (isRiftStalker) {
+            const danger = new RiftStalker(pos.x, pos.y, radius);
+            this.dangers.push(danger);
+        } else if (isGoldDigger) {
             const danger = new GoldDigger(pos.x, pos.y, radius);
             this.dangers.push(danger);
         } else {
@@ -342,17 +361,19 @@ class Game {
     
     collectTreat(treat) {
         if (treat.collect()) {
-            this.runScore++;
+            const stats = this.getStats();
+            const coinAmount = 1 + Math.floor(stats.coinGain);
             
-            // Add to persistent currency
-            this.upgradeTree.addCurrency(1);
+            // Add to both current run score and persistent currency
+            this.runScore += coinAmount;
+            this.upgradeTree.addCurrency(coinAmount);
             this.upgradeTree.save();
+            this.treatsCollected += 1;
             
             // Spawn celebration particles
             this.spawnCollectParticles(treat.x, treat.y);
             
             // Check for dot rebirth chance
-            const stats = this.getStats();
             if (stats.spawnDotOnTreat > 0) {
                 const chance = stats.spawnDotOnTreat;
                 if (Math.random() < chance) {
@@ -377,7 +398,10 @@ class Game {
             this.dangers.splice(index, 1);
             
             // Screen shake
-            this.shakeIntensity = 10;
+            if (this.gameTime - this.lastAnnihilationShakeTime >= 10) {
+                this.shakeIntensity = 10;
+                this.lastAnnihilationShakeTime = this.gameTime;
+            }
             
             // Spawn explosion particles
             this.spawnExplosionParticles(danger.x, danger.y, '220, 40, 80');
@@ -446,21 +470,6 @@ class Game {
         
         this.gameTime += dt;
         
-        // Handle continuous magnet placement while mouse button is held
-        for (const type of ['attract', 'repel']) {
-            if (this.mousePositions[type]) {
-                // Decrease cooldown
-                this.magnetCooldown[type] -= dt;
-                
-                // Place magnet if cooldown is ready
-                if (this.magnetCooldown[type] <= 0) {
-                    const { x, y } = this.mousePositions[type];
-                    this.placeMagnet(x, y, type);
-                    this.magnetCooldown[type] = this.magnetCooldownTime;
-                }
-            }
-        }
-        
         // Update spawn timers
         this.dangerSpawnTimer -= dt;
         this.treatSpawnTimer -= dt;
@@ -468,7 +477,10 @@ class Game {
         if (this.dangerSpawnTimer <= 0) {
             this.spawnDanger();
             // Spawn faster as game progresses, but cap at 3 seconds
-            this.dangerSpawnTimer = Math.max(3, this.dangerSpawnInterval - this.gameTime * 0.05);
+            const spawnedDots = this.dots.length;
+            const spawnScale = Math.max(1, spawnedDots);
+            const scaledInterval = this.dangerSpawnInterval / spawnScale;
+            this.dangerSpawnTimer = Math.max(3, scaledInterval - this.gameTime * 0.05);
         }
         
         if (this.treatSpawnTimer <= 0) {

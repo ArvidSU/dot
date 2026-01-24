@@ -34,6 +34,7 @@ class Game {
         // Entities
         this.dot = null;
         this.dots = []; // Array for multiple dots
+        this.collectors = []; // Array for collector dots (green helpers)
         this.magnets = [];
         this.dangers = [];
         this.treats = [];
@@ -214,6 +215,7 @@ class Game {
         // Reset dot at center
         this.dot = new Dot(this.canvas.width / 2, this.canvas.height / 2, false, true);
         this.dots = [];
+        this.collectors = [];
         this.magnets = [];
         this.dangers = [];
         this.treats = [];
@@ -386,6 +388,17 @@ class Game {
                 }
             }
             
+            // Check for collector spawn chance
+            if (stats.spawnCollectorOnTreat > 0) {
+                const chance = stats.spawnCollectorOnTreat;
+                if (Math.random() < chance) {
+                    const collector = new Collector(treat.x, treat.y);
+                    this.collectors.push(collector);
+                    // Spawn particles to indicate collector creation
+                    this.spawnCollectorCreationParticles(treat.x, treat.y);
+                }
+            }
+            
             // Update UI
             this.updateUI();
         }
@@ -418,6 +431,10 @@ class Game {
     
     spawnDotCreationParticles(x, y, isAngry = false) {
         this.particleSystem.spawnDotCreationParticles(x, y, isAngry);
+    }
+    
+    spawnCollectorCreationParticles(x, y) {
+        this.particleSystem.spawnCollectorCreationParticles(x, y);
     }
     
     handleDotDeath(dot) {
@@ -534,6 +551,18 @@ class Game {
             // Remove dead dots
             if (!dot.alive && dot.deathAnimation >= 1) {
                 this.dots.splice(i, 1);
+            }
+        }
+        
+        // Update collectors (green helpers)
+        for (let i = this.collectors.length - 1; i >= 0; i--) {
+            const collector = this.collectors[i];
+            collector.update(dt, this.treats);
+            this.physics.constrainToBounds(collector, this.canvas.width, this.canvas.height);
+            
+            // Remove dead collectors
+            if (!collector.alive && collector.deathAnimation >= 1) {
+                this.collectors.splice(i, 1);
             }
         }
         
@@ -654,6 +683,25 @@ class Game {
             }
         }
         
+        // Check treat collisions with collectors
+        for (const collector of this.collectors) {
+            if (!collector.alive) continue;
+            const treatHit = this.physics.checkTreatCollisions(collector, this.treats);
+            if (treatHit) {
+                this.collectTreat(treatHit);
+            }
+        }
+        
+        // Check danger collisions with collectors (collectors die when hitting dangers)
+        for (const collector of this.collectors) {
+            if (!collector.alive) continue;
+            const dangerHit = this.physics.checkDangerCollisions(collector, this.dangers);
+            if (dangerHit) {
+                // Collector dies when hitting danger
+                collector.die();
+            }
+        }
+        
         // Update particles
         this.updateParticles(dt);
         
@@ -717,6 +765,11 @@ class Game {
         
         // Draw particles
         this.renderParticles();
+        
+        // Draw collectors (green helpers)
+        for (const collector of this.collectors) {
+            collector.render(ctx);
+        }
         
         // Draw dots (on top)
         if (this.dot) this.dot.render(ctx);

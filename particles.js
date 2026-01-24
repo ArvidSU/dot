@@ -128,6 +128,23 @@ class ParticleSystem {
     }
 
     /**
+     * Spawn collector creation particles (green)
+     */
+    spawnCollectorCreationParticles(x, y) {
+        this.spawn(x, y, 18, {
+            color: '0, 255, 100',
+            minSpeed: 70,
+            maxSpeed: 140,
+            minSize: 2,
+            maxSize: 5,
+            minDecay: 2,
+            maxDecay: 3,
+            spread: Math.PI * 2,
+            direction: 0
+        });
+    }
+
+    /**
      * Update all particles
      */
     update(dt) {

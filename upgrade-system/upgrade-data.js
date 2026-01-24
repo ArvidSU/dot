@@ -315,6 +315,17 @@ const UpgradeNodes = [
                 maxLevel: 10,
                 effectType: 'add',
                 costTier: 'expensive'
+            }),
+            defineProperty({
+                id: 'spawnCollectorOnTreat',
+                name: 'Green Helper',
+                description: 'Chance to spawn a green collector dot that seeks out and collects treats',
+                icon: '◉',
+                baseValue: 0,
+                valuePerLevel: 0.06,
+                maxLevel: 10,
+                effectType: 'add',
+                costTier: 'expensive'
             })
         ]
     },

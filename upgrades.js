@@ -412,6 +412,7 @@ class UpgradeTree {
             // Resurrection upgrades
             spawnDotOnTreat: 0,  // Chance to spawn a dot when collecting a treat
             spawnTreatOnDeath: 0, // Chance to spawn a treat when a dot dies
+            spawnCollectorOnTreat: 0, // Chance to spawn a collector dot when collecting a treat
             spawnedDotAnnihilation: 0, // Chance for spawned dots to annihilate dangers
             kamikaze: 0,         // Chance to spawn angry dot that seeks and annihilates dangers
             // Investment upgrades
@@ -782,6 +783,17 @@ function createDefaultUpgradeTree() {
                 valuePerLevel: 0.09,
                 maxLevel: 10,
                 costFunction: createDynamicCostFunction({ id: 'spawnTreatOnDeath', valuePerLevel: 0.09, maxLevel: 10, effectType: 'add' }, 'resurrection'),
+                effectType: 'add'
+            },
+            {
+                id: 'spawnCollectorOnTreat',
+                name: 'Green Helper',
+                description: 'Chance to spawn a green collector dot that seeks out and collects treats',
+                icon: '◉',
+                baseValue: 0,
+                valuePerLevel: 0.06,
+                maxLevel: 10,
+                costFunction: createDynamicCostFunction({ id: 'spawnCollectorOnTreat', valuePerLevel: 0.06, maxLevel: 10, effectType: 'add' }, 'resurrection'),
                 effectType: 'add'
             }
         ]

@@ -491,7 +491,7 @@ class UpgradeUI {
         // Debug buttons for testing
         document.getElementById('debug-plus').addEventListener('click', (e) => {
             e.stopPropagation();
-            this.tree.addCurrency(10);
+            this.tree.addCurrency(50);
             this.tree.save();
             this.updateCurrencyDisplay();
         });

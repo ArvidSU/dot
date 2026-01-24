@@ -839,6 +839,170 @@ class RiftStalker {
     }
 }
 
+class Collector {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = 0;
+        this.vy = 0;
+        this.radius = 6;
+        this.trail = [];
+        this.maxTrailLength = 15;
+        this.alive = true;
+        this.deathTime = 0;
+        this.deathAnimation = 0;
+        this.isCollector = true;
+        this.targetTreat = null;
+        this.speed = 120; // Movement speed
+        this.pulsePhase = Math.random() * Math.PI * 2;
+    }
+    
+    update(dt, treats) {
+        if (!this.alive) {
+            this.deathAnimation = Math.min(1, this.deathAnimation + dt * 2);
+            return;
+        }
+        
+        this.pulsePhase += dt * 4;
+        
+        // Find closest treat if no target or target is collected
+        if (!this.targetTreat || this.targetTreat.collected) {
+            this.targetTreat = null;
+            let closestDist = Infinity;
+            for (const treat of treats) {
+                if (treat.collected) continue;
+                const dx = treat.x - this.x;
+                const dy = treat.y - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    this.targetTreat = treat;
+                }
+            }
+        }
+        
+        // Move towards target treat
+        if (this.targetTreat && !this.targetTreat.collected) {
+            const dx = this.targetTreat.x - this.x;
+            const dy = this.targetTreat.y - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist > 1) {
+                this.vx = (dx / dist) * this.speed;
+                this.vy = (dy / dist) * this.speed;
+            }
+        } else {
+            // Wander randomly if no treats
+            this.vx *= 0.95;
+            this.vy *= 0.95;
+            if (Math.abs(this.vx) < 10 && Math.abs(this.vy) < 10) {
+                this.vx += (Math.random() - 0.5) * 20;
+                this.vy += (Math.random() - 0.5) * 20;
+            }
+        }
+        
+        // Apply velocity with damping
+        const damping = 0.98;
+        this.vx *= damping;
+        this.vy *= damping;
+        
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        // Update trail
+        this.trail.unshift({ x: this.x, y: this.y, age: 0 });
+        if (this.trail.length > this.maxTrailLength) {
+            this.trail.pop();
+        }
+        
+        // Age trail particles
+        for (let i = 0; i < this.trail.length; i++) {
+            this.trail[i].age += dt * 2;
+        }
+    }
+    
+    die() {
+        if (this.alive) {
+            this.alive = false;
+            this.deathTime = performance.now();
+        }
+    }
+    
+    render(ctx) {
+        const trailColor = '0, 255, 100';
+        
+        // Draw trail
+        if (this.trail.length > 1) {
+            for (let i = 0; i < this.trail.length - 1; i++) {
+                const point = this.trail[i];
+                const nextPoint = this.trail[i + 1];
+                const progress = i / this.trail.length;
+                const alpha = Math.max(0, 1 - point.age) * 0.5 * (1 - progress);
+                const lineWidth = (this.radius * 0.7) * (1 - progress);
+                
+                ctx.beginPath();
+                ctx.moveTo(point.x, point.y);
+                ctx.lineTo(nextPoint.x, nextPoint.y);
+                ctx.strokeStyle = `rgba(${trailColor}, ${alpha * 0.3})`;
+                ctx.lineWidth = lineWidth;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
+        }
+        
+        if (!this.alive) {
+            // Death animation
+            const t = this.deathAnimation;
+            const expandRadius = this.radius + t * 60;
+            const alpha = 1 - t;
+            
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, expandRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(${trailColor}, ${alpha})`;
+            ctx.lineWidth = 2 * (1 - t);
+            ctx.stroke();
+            
+            if (t < 0.5) {
+                const shrink = 1 - t * 2;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * shrink, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${trailColor}, ${shrink})`;
+                ctx.fill();
+            }
+            return;
+        }
+        
+        const pulse = 1 + Math.sin(this.pulsePhase) * 0.15;
+        const r = this.radius * pulse;
+        
+        // Glow effect
+        const glowGradient = ctx.createRadialGradient(
+            this.x, this.y, 0,
+            this.x, this.y, r * 3
+        );
+        glowGradient.addColorStop(0, 'rgba(0, 255, 100, 0.4)');
+        glowGradient.addColorStop(0.5, 'rgba(0, 255, 100, 0.15)');
+        glowGradient.addColorStop(1, 'rgba(0, 255, 100, 0)');
+        
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, r * 3, 0, Math.PI * 2);
+        ctx.fillStyle = glowGradient;
+        ctx.fill();
+        
+        // Main body
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = '#00ff64';
+        ctx.fill();
+        
+        // Inner highlight
+        ctx.beginPath();
+        ctx.arc(this.x - 1.5, this.y - 1.5, r * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(150, 255, 180, 0.8)';
+        ctx.fill();
+    }
+}
+
 class Treat {
     constructor(x, y) {
         this.x = x;
@@ -987,6 +1151,7 @@ if (typeof module !== 'undefined' && module.exports) {
         Danger,
         GoldDigger,
         RiftStalker,
+        Collector,
         Treat
     };
 }

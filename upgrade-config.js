@@ -139,7 +139,8 @@ const UPGRADE_TREE_CONFIG = {
             y: 2,
             properties: [
                 createPropertyConfig('spawnDotOnTreat', 'Dot Rebirth', 'Chance to spawn a dot when collecting a treat', '●', 0, 0.1, 10, 'add', 'resurrection'),
-                createPropertyConfig('spawnTreatOnDeath', 'Treat Legacy', 'Chance to spawn a treat when a dot dies', '★', 0, 0.1, 10, 'add', 'resurrection')
+                createPropertyConfig('spawnTreatOnDeath', 'Treat Legacy', 'Chance to spawn a treat when a dot dies', '★', 0, 0.1, 10, 'add', 'resurrection'),
+                createPropertyConfig('spawnCollectorOnTreat', 'Green Helper', 'Chance to spawn a green collector dot that seeks out and collects treats', '◉', 0, 0.06, 10, 'add', 'resurrection')
             ]
         },
         {

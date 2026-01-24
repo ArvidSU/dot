@@ -110,6 +110,12 @@ const StatDefinitions = {
         baseValue: 0,
         defaultEffectType: EffectType.ADD
     },
+    spawnCollectorOnTreat: {
+        category: StatCategory.SPAWNING,
+        description: 'Chance to spawn a green collector dot when collecting a treat',
+        baseValue: 0,
+        defaultEffectType: EffectType.ADD
+    },
     treatSpawnChance: {
         category: StatCategory.SPAWNING,
         description: 'Increased chance of treats spawning',
